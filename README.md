@@ -39,16 +39,3 @@ cp -a omnideck-custom-apps/code-ide /home/omnideck/apps/
 
 Restart or refresh Omnideck if the newly installed app does not appear
 immediately. Runtime state belongs in each app's ignored `data/` directory.
-
-## Local bind-mount development
-
-Some development installations bind a host directory into
-`/home/omnideck`. In that case, keep the repository wherever is convenient and
-create a symlink that resolves *inside the container*. The exact host path is
-installation-specific; `~/.omnideck` is not assumed.
-
-For this checkout, the container-visible relative link is:
-
-```text
-/home/omnideck/apps/code-ide -> ../omnideck-custom-apps/code-ide
-```
