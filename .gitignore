@@ -1,0 +1,13 @@
+# Custom App runtime and dependency data
+**/data/
+**/node_modules/
+**/__pycache__/
+**/.pytest_cache/
+**/.venv/
+
+# Editor and OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+**/.vscode/
+**/.idea/

@@ -1,0 +1,5 @@
+{
+  "title": "Code IDE",
+  "description": "A VS Code-inspired code editor. Browse folders, open files, edit and save them.",
+  "icon": "bi-code-slash"
+}

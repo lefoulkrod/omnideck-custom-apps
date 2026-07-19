@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Code IDE</title>
+  <link rel="stylesheet" href="app.css">
+  <link rel="stylesheet" href="fonts/bootstrap-icons.css">
+  <!-- CodeMirror -->
+  <link rel="stylesheet" href="codemirror/codemirror.css">
+  <link rel="stylesheet" href="codemirror/addon/fold/foldgutter.css">
+  <link rel="stylesheet" href="codemirror/addon/dialog/dialog.css">
+  <link rel="stylesheet" href="codemirror/theme/vscode-dark.css">
+</head>
+<body>
+<div id="app">
+  <!-- Title Bar -->
+  <div class="titlebar">
+    <i class="bi bi-code-slash titlebar-icon"></i>
+    <span class="titlebar-title">Code IDE</span>
+    <div class="titlebar-spacer"></div>
+    <button class="titlebar-btn" id="btn-new-file" title="New File"><i class="bi bi-file-earmark-plus"></i> New File</button>
+    <button class="titlebar-btn" id="btn-new-folder" title="New Folder"><i class="bi bi-folder-plus"></i> New Folder</button>
+    <button class="titlebar-btn" id="btn-save" title="Save (Ctrl+S)" disabled><i class="bi bi-save"></i> Save</button>
+    <button class="titlebar-btn" id="btn-terminal" title="Toggle Terminal (Ctrl+`)"><i class="bi bi-terminal"></i></button>
+  </div>
+
+  <!-- Main -->
+  <div class="main">
+    <!-- Activity Bar (always visible thin strip) -->
+    <div class="activity-bar" id="activity-bar">
+      <button class="activity-btn active" id="btn-explorer" title="Toggle Explorer">
+        <i class="bi bi-files"></i>
+      </button>
+      <button class="activity-btn" id="btn-source-control" title="Source Control">
+        <i class="bi bi-git"></i>
+      </button>
+      <button class="activity-btn" id="btn-settings" title="Editor Settings">
+        <i class="bi bi-gear"></i>
+      </button>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+      <div class="sidebar-view" id="explorer-view">
+      <div class="sidebar-header">
+        <span id="workspace-name">Explorer</span>
+        <div class="sidebar-actions">
+          <button class="icon-btn" id="btn-open-folder" title="Open Folder as Root"><i class="bi bi-folder-symlink"></i></button>
+          <button class="icon-btn" id="btn-home" title="Home"><i class="bi bi-house-door"></i></button>
+          <button class="icon-btn" id="btn-refresh" title="Refresh"><i class="bi bi-arrow-clockwise"></i></button>
+          <button class="icon-btn" id="btn-collapse-all" title="Collapse All Folders"><i class="bi bi-arrows-collapse"></i></button>
+          <button class="icon-btn" id="btn-hidden" title="Show Hidden Files"><i class="bi bi-eye-slash"></i></button>
+          <button class="icon-btn" id="btn-reveal" title="Reveal Active File"><i class="bi bi-folder-symlink"></i></button>
+          <button class="icon-btn" id="btn-new-file-side" title="New File"><i class="bi bi-file-earmark-plus"></i></button>
+          <button class="icon-btn" id="btn-new-folder-side" title="New Folder"><i class="bi bi-folder-plus"></i></button>
+        </div>
+      </div>
+      <div class="search-bar" id="search-bar">
+        <i class="bi bi-search search-icon"></i>
+        <input type="text" class="search-input" id="search-input" placeholder="Search files..." spellcheck="false" autocomplete="off">
+        <button class="icon-btn" id="search-mode" title="Search File Contents"><i class="bi bi-text-paragraph"></i></button>
+        <button class="icon-btn" id="search-options-toggle" title="Search Options"><i class="bi bi-sliders"></i></button>
+        <button class="icon-btn search-clear" id="search-clear" title="Clear" style="display:none;"><i class="bi bi-x"></i></button>
+      </div>
+      <div class="search-options" id="search-options" hidden>
+        <input id="search-include" placeholder="Include: *.js, web/**" aria-label="Files to include">
+        <input id="search-exclude" placeholder="Exclude: *.min.js" aria-label="Files to exclude">
+        <div class="search-replace-row">
+          <input id="search-replace" placeholder="Replace" aria-label="Replace text">
+          <button class="icon-btn" id="search-replace-all" title="Replace All"><i class="bi bi-arrow-repeat"></i></button>
+        </div>
+      </div>
+      <div class="tree-container" id="tree-container">
+        <div class="loading"><div class="spinner"></div>Loading...</div>
+      </div>
+      </div>
+
+      <div class="sidebar-view source-view" id="source-view" hidden>
+        <div class="source-header">
+          <strong>Source Control</strong>
+          <button class="icon-btn" id="source-refresh" title="Refresh"><i class="bi bi-arrow-clockwise"></i></button>
+          <button class="icon-btn" id="source-close" title="Close Sidebar"><i class="bi bi-x"></i></button>
+        </div>
+        <div id="source-branch" class="source-branch"></div>
+        <div id="source-files" class="source-files"></div>
+      </div>
+    </div>
+
+    <div class="resizer" id="resizer"></div>
+
+    <!-- Editor Area -->
+    <div class="editor-area">
+      <!-- Tab Bar -->
+      <div class="tab-bar" id="tab-bar"></div>
+
+      <!-- Editor Content -->
+      <div class="editor-content" id="editor-content">
+        <div class="welcome">
+          <i class="bi bi-code-slash logo"></i>
+          <h2>Code IDE</h2>
+          <p>Browse folders from the sidebar and click any file to start editing. Your changes are saved with Ctrl+S or the Save button.</p>
+          <div class="shortcuts">
+            <div class="shortcut"><kbd>Ctrl</kbd> + <kbd>S</kbd> Save file</div>
+            <div class="shortcut"><kbd>Ctrl</kbd> + <kbd>B</kbd> Toggle sidebar</div>
+            <div class="shortcut"><kbd>Ctrl</kbd> + <kbd>W</kbd> Close tab</div>
+            <div class="shortcut"><kbd>Ctrl</kbd> + <kbd>P</kbd> Quick open</div>
+            <div class="shortcut"><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>P</kbd> Commands</div>
+            <div class="shortcut"><kbd>Ctrl</kbd> + <kbd>`</kbd> Toggle terminal</div>
+            <div class="shortcut"><kbd>Tab</kbd> Insert spaces</div>
+          </div>
+          <p style="margin-top:12px;font-size:12px;color:var(--text-dim)">Tip: type <code style="background:var(--bg-input);padding:2px 6px;border-radius:3px;font-family:var(--font-mono);color:var(--text-blue)">omnideck "your question"</code> in the terminal to chat with an AI assistant</p>
+        </div>
+      </div>
+
+      <!-- Terminal Panel -->
+      <div class="terminal-panel" id="terminal-panel">
+        <div class="terminal-header">
+          <div class="terminal-tabs">
+            <span class="terminal-tab active"><i class="bi bi-terminal"></i> Terminal 1</span>
+          </div>
+          <div class="terminal-actions">
+            <button class="icon-btn" id="term-new" title="New Terminal"><i class="bi bi-plus"></i></button>
+            <button class="icon-btn" id="term-kill" title="Close Active Terminal"><i class="bi bi-trash"></i></button>
+            <button class="icon-btn" id="term-maximize" title="Maximize/Restore"><i class="bi bi-arrows-fullscreen"></i></button>
+            <button class="icon-btn" id="term-clear" title="Clear"><i class="bi bi-eraser"></i></button>
+            <button class="icon-btn" id="term-collapse" title="Collapse to Strip"><i class="bi bi-chevron-down"></i></button>
+            <button class="icon-btn" id="term-close" title="Close Terminal"><i class="bi bi-x"></i></button>
+          </div>
+        </div>
+        <div class="terminal-body" id="terminal-body">
+          <div class="terminal-output" id="terminal-output"></div>
+          <div class="terminal-input-line">
+            <span class="terminal-prompt" id="terminal-prompt">$</span>
+            <input type="text" class="terminal-input" id="terminal-input" spellcheck="false" autocomplete="off" autocapitalize="off">
+          </div>
+        </div>
+      </div>
+
+      <!-- Status Bar -->
+      <div class="statusbar" id="statusbar">
+        <div class="statusbar-item" id="status-path"><i class="bi bi-file-earmark"></i> No file open</div>
+        <div class="statusbar-spacer"></div>
+        <div class="statusbar-item" id="status-lines">0 lines</div>
+        <div class="statusbar-item" id="status-lang">Plain Text</div>
+        <div class="statusbar-item" id="status-save"><span class="saved">Ready</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Quick Open / Command Palette -->
+<div class="quick-overlay" id="quick-overlay">
+  <div class="quick-box">
+    <input id="quick-input" autocomplete="off" spellcheck="false" aria-label="Quick open">
+    <div id="quick-results" class="quick-results"></div>
+  </div>
+</div>
+
+<!-- Editor Settings -->
+<div class="modal-overlay" id="settings-overlay">
+  <div class="modal settings-modal">
+    <div class="modal-header">Editor Settings</div>
+    <div class="settings-grid">
+      <label>Tab size <input id="setting-tab-size" type="number" min="1" max="8" value="2"></label>
+      <label>Font size <input id="setting-font-size" type="number" min="10" max="28" value="14"></label>
+      <label><input id="setting-spaces" type="checkbox" checked> Insert spaces</label>
+      <label><input id="setting-wrap" type="checkbox"> Word wrap</label>
+      <label><input id="setting-language-indent" type="checkbox" checked> Language indentation</label>
+      <label><input id="setting-autosave" type="checkbox"> Auto save</label>
+      <label>Auto-save delay (ms) <input id="setting-autosave-delay" type="number" min="250" max="10000" value="1000"></label>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" id="settings-cancel">Cancel</button>
+      <button class="btn btn-primary" id="settings-save">Apply</button>
+    </div>
+  </div>
+</div>
+
+<!-- Context Menu -->
+<div class="context-menu" id="context-menu"></div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <div class="modal-header" id="modal-title">New File</div>
+    <div class="modal-body">
+      <label id="modal-label">File name:</label>
+      <input type="text" id="modal-input" placeholder="filename.ext">
+    </div>
+    <div class="modal-footer">
+      <button class="btn" id="modal-cancel">Cancel</button>
+      <button class="btn btn-primary" id="modal-confirm">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm Dialog -->
+<div class="modal-overlay" id="confirm-overlay">
+  <div class="modal">
+    <div class="modal-header" id="confirm-title">Confirm</div>
+    <div class="modal-body">
+      <p id="confirm-message" style="color: var(--text-main); line-height: 1.5;"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" id="confirm-cancel">Cancel</button>
+      <button class="btn btn-danger" id="confirm-yes">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast">
+  <i class="bi bi-check-circle"></i>
+  <span id="toast-msg">Saved</span>
+</div>
+
+<script src="/api/custom-apps/sdk.js"></script>
+<!-- CodeMirror core -->
+<script src="codemirror/codemirror.js"></script>
+<!-- CodeMirror mode utilities (must load before modes that use them) -->
+<script src="codemirror/addon/mode/overlay.js"></script>
+<script src="codemirror/addon/mode/multiplex.js"></script>
+<!-- CodeMirror modes -->
+<script src="codemirror/mode/python/python.js"></script>
+<script src="codemirror/mode/javascript/javascript.js"></script>
+<script src="codemirror/mode/xml/xml.js"></script>
+<script src="codemirror/mode/css/css.js"></script>
+<script src="codemirror/mode/markdown/markdown.js"></script>
+<script src="codemirror/mode/gfm/gfm.js"></script>
+<script src="codemirror/mode/go/go.js"></script>
+<script src="codemirror/mode/shell/shell.js"></script>
+<script src="codemirror/mode/yaml/yaml.js"></script>
+<script src="codemirror/mode/sql/sql.js"></script>
+<!-- CodeMirror addons -->
+<script src="codemirror/addon/fold/foldcode.js"></script>
+<script src="codemirror/addon/fold/foldgutter.js"></script>
+<script src="codemirror/addon/fold/brace-fold.js"></script>
+<script src="codemirror/addon/fold/comment-fold.js"></script>
+<script src="codemirror/addon/fold/indent-fold.js"></script>
+<script src="codemirror/addon/fold/xml-fold.js"></script>
+<script src="codemirror/addon/fold/markdown-fold.js"></script>
+<script src="codemirror/addon/edit/closebrackets.js"></script>
+<script src="codemirror/addon/edit/matchbrackets.js"></script>
+<script src="codemirror/addon/edit/closetag.js"></script>
+<script src="codemirror/addon/selection/active-line.js"></script>
+<script src="codemirror/addon/search/searchcursor.js"></script>
+<script src="codemirror/addon/search/search.js"></script>
+<script src="codemirror/addon/search/match-highlighter.js"></script>
+<script src="codemirror/addon/dialog/dialog.js"></script>
+<!-- App -->
+<script type="module" src="main.js"></script>
+</body>
+</html>
