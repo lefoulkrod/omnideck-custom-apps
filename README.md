@@ -42,16 +42,16 @@ immediately. Runtime state belongs in each app's ignored `data/` directory.
 ## Teach your agents to build Custom Apps
 
 This repository includes the
-[Build Custom Apps skill](Build-Custom-Apps.skill.omnideck.json). Import it
-into Omnideck before asking an agent to create, modify, or debug a Custom App.
-It teaches the agent the app structure, frontend SDK, decorated Python actions,
-persistent-data rules, user-file access, and validation steps.
+[Build Custom Apps skill](Build-Custom-Apps.skill.omnideck.json). To use it:
 
-You can ask your Omnideck agent:
+1. Download `Build-Custom-Apps.skill.omnideck.json` from the repository root.
+2. Import the downloaded file as a skill in Omnideck.
+3. Assign the `Build Custom Apps` skill to each agent profile that should be
+   able to create, modify, or debug Custom Apps.
 
-> Import `Build-Custom-Apps.skill.omnideck.json` from the root of the cloned
-> `omnideck-custom-apps` repository as a skill named `Build Custom Apps`. Use
-> that skill whenever you build or change an Omnideck Custom App.
+The skill teaches those agent profiles the app structure, frontend SDK,
+decorated Python actions, persistent-data rules, user-file access, and
+validation steps.
 
 ## License
 
