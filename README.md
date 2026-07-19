@@ -51,3 +51,14 @@ cp -a omnideck-custom-apps/code-ide /home/omnideck/apps/
 
 Restart or refresh Omnideck if the newly installed app does not appear
 immediately. Runtime state belongs in each app's ignored `data/` directory.
+
+## License
+
+Except where otherwise noted, original code in this repository is copyright
+2026 Larry Foulkrod and licensed under the
+[Apache License 2.0](LICENSE). Bundled third-party components remain under
+their respective licenses; see [NOTICE](NOTICE) and
+[THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES).
+
+Each app directory also includes its own copy of these documents so the app
+can be copied and distributed independently of this monorepo.

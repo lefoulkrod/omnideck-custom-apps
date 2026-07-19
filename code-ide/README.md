@@ -41,3 +41,10 @@ Omnideck runs every Python action in a fresh subprocess. Code IDE therefore
 persists each terminal tab's working directory and history in the frontend,
 while individual shell commands remain bounded action invocations rather than
 one long-lived PTY process.
+
+## License
+
+Except where otherwise noted, original code in this app is copyright 2026
+Larry Foulkrod and licensed under the [Apache License 2.0](LICENSE). Bundled
+third-party components retain their respective licenses; see [NOTICE](NOTICE)
+and [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES).
