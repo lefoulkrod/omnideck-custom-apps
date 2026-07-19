@@ -1,5 +1,6 @@
 # Custom App runtime and dependency data
-**/data/
+**/data/*
+!**/data/.gitkeep
 **/node_modules/
 **/__pycache__/
 **/.pytest_cache/

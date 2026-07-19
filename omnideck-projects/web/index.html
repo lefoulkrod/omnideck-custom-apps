@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Omnideck Projects</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+        <div>
+          <strong>Omnideck</strong>
+          <span>Projects</span>
+        </div>
+        <button class="icon-button sidebar-close" id="sidebar-close" aria-label="Close navigation">×</button>
+      </div>
+
+      <nav class="primary-nav" aria-label="Main navigation">
+        <a href="#/home" data-route="home"><span class="nav-icon">⌂</span>Home</a>
+        <a href="#/inbox" data-route="inbox"><span class="nav-icon">⌄</span>Inbox <span class="nav-badge" id="inbox-badge"></span></a>
+        <a href="#/conversations" data-route="conversations"><span class="nav-icon">◌</span>Conversations</a>
+        <a href="#/artifacts" data-route="artifacts"><span class="nav-icon">◇</span>Artifacts</a>
+        <a href="#/files" data-route="files"><span class="nav-icon">▤</span>Files & folders</a>
+        <a href="#/storage" data-route="storage"><span class="nav-icon">◎</span>Storage & cleanup</a>
+      </nav>
+
+      <div class="sidebar-section-heading">
+        <span>Projects</span>
+        <button class="icon-button" id="new-project-sidebar" title="New project" aria-label="New project">+</button>
+      </div>
+      <nav class="project-nav" id="project-nav" aria-label="Projects"></nav>
+
+      <div class="sidebar-note">
+        <span class="safe-dot"></span>
+        <div><strong>Non-destructive by design</strong><span>Your source content stays where it is.</span></div>
+      </div>
+    </aside>
+    <button class="scrim" id="scrim" aria-label="Close navigation"></button>
+
+    <section class="workspace">
+      <header class="topbar">
+        <button class="icon-button menu-button" id="menu-button" aria-label="Open navigation">☰</button>
+        <div class="topbar-title">
+          <span class="eyebrow" id="page-eyebrow">Your Omnideck</span>
+          <h1 id="page-title">Home</h1>
+        </div>
+        <label class="search-box">
+          <span aria-hidden="true">⌕</span>
+          <input id="global-search" type="search" placeholder="Search this view" autocomplete="off">
+          <kbd>/</kbd>
+        </label>
+        <button class="button subtle" id="ask-omnideck"><span aria-hidden="true">✦</span> Ask Omnideck</button>
+        <button class="icon-button bordered" id="refresh-button" title="Refresh" aria-label="Refresh">↻</button>
+        <button class="button primary" id="new-project"><span aria-hidden="true">+</span> New project</button>
+      </header>
+
+      <main class="content" id="content" tabindex="-1">
+        <div class="loading-state">
+          <span class="spinner"></span>
+          <p>Gathering your Omnideck activity…</p>
+        </div>
+      </main>
+    </section>
+  </div>
+
+  <div class="selection-bar" id="selection-bar" hidden>
+    <span><strong id="selection-count">0</strong> selected</span>
+    <button class="button subtle inverse" id="clear-selection">Clear</button>
+    <label>
+      <span class="sr-only">Choose project</span>
+      <select id="assign-project"></select>
+    </label>
+    <button class="button light" id="assign-selection">Add to project</button>
+  </div>
+
+  <div class="modal-backdrop" id="project-modal" hidden>
+    <form class="modal" id="project-form">
+      <div class="modal-heading">
+        <div>
+          <span class="eyebrow" id="project-modal-eyebrow">Create</span>
+          <h2 id="project-modal-title">New project</h2>
+        </div>
+        <button class="icon-button" type="button" data-close-modal aria-label="Close">×</button>
+      </div>
+      <label class="field">
+        <span>Name</span>
+        <input id="project-name" name="name" maxlength="80" required placeholder="e.g. Summer vacation">
+      </label>
+      <label class="field">
+        <span>Description <small>optional</small></span>
+        <textarea id="project-description" name="description" maxlength="500" rows="3" placeholder="What belongs in this project?"></textarea>
+      </label>
+      <label class="field">
+        <span>Tags <small>comma separated</small></span>
+        <input id="project-tags" name="tags" placeholder="travel, planning, family">
+      </label>
+      <fieldset class="color-field">
+        <legend>Color</legend>
+        <div class="color-options" id="color-options"></div>
+      </fieldset>
+      <div class="modal-actions">
+        <button class="button subtle" type="button" data-close-modal>Cancel</button>
+        <button class="button primary" type="submit" id="project-submit">Create project</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="modal-backdrop" id="confirm-modal" hidden>
+    <div class="modal compact" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+      <div class="danger-mark">!</div>
+      <h2 id="confirm-title">Delete project?</h2>
+      <p id="confirm-message"></p>
+      <div class="safe-callout">Only the project and its organization links are removed. Conversations, artifacts, files, and folders are not deleted.</div>
+      <div class="modal-actions">
+        <button class="button subtle" type="button" id="confirm-cancel">Cancel</button>
+        <button class="button danger" type="button" id="confirm-action">Delete project</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="/api/custom-apps/sdk.js"></script>
+  <script type="module" src="main.js"></script>
+</body>
+</html>

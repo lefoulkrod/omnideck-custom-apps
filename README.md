@@ -20,16 +20,38 @@ top-level directory is an independently installable app.
 For now, Custom Apps must be installed by an Omnideck agent. In Omnideck, ask
 your agent:
 
-> Clone https://github.com/lefoulkrod/omnideck-custom-apps into the persistent
-> Omnideck home directory. Install `code-ide` by linking or copying that
-> subfolder into the Custom Apps directory. Do not overwrite an existing app
-> or its `data/` directory.
+> Clone https://github.com/lefoulkrod/omnideck-custom-apps into persistent
+> Omnideck storage. Install the requested app by linking or copying its
+> subfolder into the configured Custom Apps directory. Do not overwrite an
+> existing app or its `data/` directory.
 
 The agent will discover the configured Custom Apps directory and perform the
 installation in the correct persistent location.
 
 Restart or refresh Omnideck if the newly installed app does not appear
 immediately. Runtime state belongs in each app's ignored `data/` directory.
+
+## Apps
+
+- [`code-ide`](code-ide) — a VS Code-inspired file editor, Git diff viewer,
+  and command terminal.
+- [`omnideck-projects`](omnideck-projects) — a project-centric organizer for
+  conversations, artifacts, files, folders, storage awareness, and cleanup
+  planning.
+
+## Teach your agents to build Custom Apps
+
+This repository includes the
+[Build Custom Apps skill](Build-Custom-Apps.skill.omnideck.json). Import it
+into Omnideck before asking an agent to create, modify, or debug a Custom App.
+It teaches the agent the app structure, frontend SDK, decorated Python actions,
+persistent-data rules, user-file access, and validation steps.
+
+You can ask your Omnideck agent:
+
+> Import `Build-Custom-Apps.skill.omnideck.json` from the root of the cloned
+> `omnideck-custom-apps` repository as a skill named `Build Custom Apps`. Use
+> that skill whenever you build or change an Omnideck Custom App.
 
 ## License
 
