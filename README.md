@@ -3,6 +3,18 @@
 Custom Apps for [Omnideck](https://github.com/omnideck-dev/omnideck). Each
 top-level directory is an independently installable app.
 
+> [!WARNING]
+> **Omnideck Custom Apps are an experimental feature.** A Custom App can include
+> backend actions that read or modify files, run commands, and access other data
+> available to the Omnideck runtime. Treat every app—including the apps in this
+> repository—as untrusted until you have reviewed and understood its code.
+>
+> Review an app's `app.py`, frontend JavaScript, dependencies, and requested
+> behavior before installing it. Review changes again before updating, keep
+> backups of important data, and install only code you are comfortable allowing
+> to run in your environment. Nothing in this repository should be treated as a
+> security guarantee or a substitute for your own review.
+
 ## Install with your Omnideck agent
 
 This is the recommended installation method for CLI deployments, which keep
