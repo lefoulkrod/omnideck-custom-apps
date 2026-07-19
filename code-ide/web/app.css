@@ -926,7 +926,7 @@ html, body {
 }
 
 .terminal-panel.collapsed {
-  height: 32px;
+  height: 32px !important;
   min-height: 32px;
 }
 
@@ -1111,6 +1111,17 @@ html, body {
 .context-menu-item:hover {
   background: var(--bg-context-hover);
   color: var(--text-bright);
+}
+
+.context-menu-item.disabled {
+  color: var(--text-dim);
+  cursor: default;
+  opacity: 0.55;
+}
+
+.context-menu-item.disabled:hover {
+  background: transparent;
+  color: var(--text-dim);
 }
 
 .context-menu-item.danger {

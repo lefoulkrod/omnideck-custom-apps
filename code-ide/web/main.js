@@ -53,7 +53,7 @@ import {
 
 // Context menu
 import {
-  showContextMenu, hideContextMenu, initContextMenu,
+  showContextMenu, showEditorContextMenu, hideContextMenu, initContextMenu,
   setContextMenuDeps,
 } from './context-menu.js';
 
@@ -118,7 +118,7 @@ function openFileBound(path, name) {
 function renderEditorBound() {
   editorRenderEditor(
     saveCurrentFileBound, closeTabBound, reloadFileBound,
-    fileUpdateStatus, renderTabsBound, saveStateBound,
+    fileUpdateStatus, renderTabsBound, saveStateBound, showEditorContextMenu,
   );
 }
 
@@ -228,6 +228,33 @@ function askOmnideckBound(path = state.activeTab) {
   });
 }
 
+async function writeEditorClipboard(cut = false) {
+  if (!state.cm) return;
+  const selection = state.cm.getSelection();
+  if (!selection) return;
+  try {
+    await navigator.clipboard.writeText(selection);
+    if (cut) state.cm.replaceSelection('', 'around');
+  } catch {
+    state.cm.focus();
+    const copied = document.execCommand?.('copy');
+    if (copied && cut) state.cm.replaceSelection('', 'around');
+    if (!copied) showToast('Clipboard access denied; use the keyboard shortcut', 'error');
+  }
+}
+
+async function pasteEditorClipboard() {
+  if (!state.cm) return;
+  try {
+    const text = await navigator.clipboard.readText();
+    state.cm.replaceSelection(text, 'around');
+    state.cm.focus();
+  } catch {
+    state.cm.focus();
+    showToast('Clipboard access denied; use Ctrl+V', 'error');
+  }
+}
+
 async function formatCurrentFileBound() {
   const tab = state.activeTab ? state.openTabs.get(state.activeTab) : null;
   if (!tab || tab.isPreview) return;
@@ -287,6 +314,12 @@ setContextMenuDeps({
   closeAllTabs: closeAllTabsBound,
   revealPath,
   askOmnideck: askOmnideckBound,
+  editorCut: () => writeEditorClipboard(true),
+  editorCopy: () => writeEditorClipboard(false),
+  editorPaste: pasteEditorClipboard,
+  openCommandPalette,
+  formatDocument: formatCurrentFileBound,
+  saveFile: saveCurrentFileBound,
 });
 
 // Modals need: refreshTree, openFile, renderTabs, renderEditor, updateStatus, doCloseTab
@@ -430,6 +463,7 @@ async function init() {
       }
       // Restore terminal state
       if (saved.terminalHeight) {
+        termState.savedHeight = saved.terminalHeight;
         dom.terminalPanel.style.height = saved.terminalHeight;
       }
       const collapseIcon = dom.termCollapse ? dom.termCollapse.querySelector('i') : null;
@@ -438,6 +472,7 @@ async function init() {
         dom.terminalPanel.classList.add('hidden');
       } else if (saved.terminalState === 'collapsed') {
         dom.terminalPanel.classList.add('collapsed');
+        dom.terminalPanel.style.height = '32px';
         if (collapseIcon) collapseIcon.className = 'bi bi-chevron-up';
       } else if (saved.terminalState === 'maximized') {
         dom.terminalPanel.classList.add('maximized');

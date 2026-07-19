@@ -119,13 +119,17 @@ export function collapseTerminal(saveStateFn) {
   const collapseIcon = dom.termCollapse ? dom.termCollapse.querySelector('i') : null;
   // If maximized, restore first
   if (dom.terminalPanel.classList.contains('maximized')) {
-    maximizeTerminal(saveStateFn);
-    return;
+    maximizeTerminal(() => {});
   }
-  dom.terminalPanel.classList.toggle('collapsed');
-  if (dom.terminalPanel.classList.contains('collapsed')) {
+  const shouldCollapse = !dom.terminalPanel.classList.contains('collapsed');
+  dom.terminalPanel.classList.toggle('collapsed', shouldCollapse);
+  if (shouldCollapse) {
+    termState.savedHeight = dom.terminalPanel.style.height
+      || `${dom.terminalPanel.offsetHeight || 220}px`;
+    dom.terminalPanel.style.height = '32px';
     if (collapseIcon) collapseIcon.className = 'bi bi-chevron-up';
   } else {
+    dom.terminalPanel.style.height = termState.savedHeight || '220px';
     if (collapseIcon) collapseIcon.className = 'bi bi-chevron-down';
     dom.terminalInput.focus();
   }
@@ -136,6 +140,11 @@ export function hideTerminal(saveStateFn) {
   // If maximized, restore first
   if (dom.terminalPanel.classList.contains('maximized')) {
     maximizeTerminal(saveStateFn);
+  }
+  if (dom.terminalPanel.classList.contains('collapsed')) {
+    dom.terminalPanel.style.height = termState.savedHeight || '220px';
+    const collapseIcon = dom.termCollapse ? dom.termCollapse.querySelector('i') : null;
+    if (collapseIcon) collapseIcon.className = 'bi bi-chevron-down';
   }
   dom.terminalPanel.classList.add('hidden');
   dom.terminalPanel.classList.remove('collapsed');
@@ -176,9 +185,13 @@ export function maximizeTerminal(saveStateFn) {
     if (maxIcon) maxIcon.className = 'bi bi-arrows-fullscreen';
   } else {
     // Maximize
-    termState.savedHeight = dom.terminalPanel.style.height || '220px';
+    if (dom.terminalPanel.classList.contains('collapsed')) {
+      dom.terminalPanel.classList.remove('collapsed');
+      dom.terminalPanel.style.height = termState.savedHeight || '220px';
+    } else {
+      termState.savedHeight = dom.terminalPanel.style.height || '220px';
+    }
     dom.terminalPanel.classList.add('maximized');
-    dom.terminalPanel.classList.remove('collapsed');
     editorArea.classList.add('terminal-maximized');
     if (maxIcon) maxIcon.className = 'bi bi-fullscreen-exit';
     if (collapseIcon) collapseIcon.className = 'bi bi-chevron-down';
@@ -393,6 +406,7 @@ export function initTerminal(saveStateFn) {
     const delta = termStartY - e.clientY;
     const newH = Math.max(80, Math.min(window.innerHeight - 100, termStartH + delta));
     dom.terminalPanel.style.height = newH + 'px';
+    termState.savedHeight = newH + 'px';
   });
   document.addEventListener('mouseup', () => {
     if (termResizing) {

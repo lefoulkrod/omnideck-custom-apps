@@ -71,7 +71,9 @@ function snapshot(dom, termState) {
       : dom.terminalPanel.classList.contains('collapsed') ? 'collapsed'
       : dom.terminalPanel.classList.contains('maximized') ? 'maximized'
       : 'normal',
-    terminalHeight: dom.terminalPanel.style.height || '220px',
+    terminalHeight: dom.terminalPanel.classList.contains('collapsed')
+      ? termState.savedHeight || '220px'
+      : dom.terminalPanel.style.height || termState.savedHeight || '220px',
   };
 }
 

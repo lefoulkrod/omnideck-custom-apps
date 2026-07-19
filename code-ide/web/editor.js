@@ -67,7 +67,20 @@ export function getIndentSettings(tab) {
   return settings;
 }
 
-export function renderEditor(saveCurrentFileFn, closeTabFn, reloadFileFn, updateStatusFn, renderTabsFn, saveStateFn) {
+export function bindEditorContextMenu(cm, showContextMenuFn) {
+  cm.getWrapperElement().addEventListener('contextmenu', (event) => {
+    if (event.shiftKey) return;
+    event.preventDefault();
+    event.stopPropagation();
+    cm.focus();
+    showContextMenuFn(event.clientX, event.clientY);
+  });
+}
+
+export function renderEditor(
+  saveCurrentFileFn, closeTabFn, reloadFileFn, updateStatusFn,
+  renderTabsFn, saveStateFn, showContextMenuFn,
+) {
   const previousCm = state.cm;
   captureEditorState();
   if (previousCm?.swapDoc && globalThis.CodeMirror?.Doc) {
@@ -186,6 +199,7 @@ export function renderEditor(saveCurrentFileFn, closeTabFn, reloadFileFn, update
   state.cmPath = state.activeTab;
   tab.doc = cm.getDoc();
   wrapper.style.fontSize = `${state.settings.fontSize}px`;
+  bindEditorContextMenu(cm, showContextMenuFn);
 
   // Change handler
   cm.on('change', () => {
