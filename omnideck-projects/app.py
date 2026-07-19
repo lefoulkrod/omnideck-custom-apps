@@ -123,6 +123,12 @@ def _database() -> Iterator[sqlite3.Connection]:
             payload_json TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
         """
     )
     try:
@@ -430,6 +436,163 @@ def _conversation_summary(path: Path, archived: bool) -> dict | None:
     }
 
 
+def _conversation_storage_details(path: Path, max_files: int = 500) -> dict:
+    """Describe the files that make up one conversation without reading them."""
+    category_labels = {
+        "events": "Event history",
+        "metadata": "Conversation metadata",
+        "browser": "Browser state",
+        "terminal": "Terminal state",
+        "scratchpad": "Scratchpad",
+        "other": "Other sidecars",
+    }
+    known_categories = {
+        "events.jsonl": "events",
+        "metadata.json": "metadata",
+        "browser_tabs.json": "browser",
+        "terminal.json": "terminal",
+        "scratchpad.json": "scratchpad",
+    }
+    files: list[dict] = []
+    category_totals: dict[str, dict[str, int]] = defaultdict(
+        lambda: {"size": 0, "file_count": 0}
+    )
+    complete = True
+    try:
+        for root, dirs, names in os.walk(path, followlinks=False):
+            dirs[:] = [name for name in dirs if not (Path(root) / name).is_symlink()]
+            for name in names:
+                if len(files) >= max_files:
+                    complete = False
+                    break
+                file_path = Path(root) / name
+                try:
+                    if file_path.is_symlink():
+                        continue
+                    size = file_path.stat().st_size
+                    relative_path = file_path.relative_to(path).as_posix()
+                except (OSError, ValueError):
+                    complete = False
+                    continue
+                category = known_categories.get(name, "other")
+                category_totals[category]["size"] += size
+                category_totals[category]["file_count"] += 1
+                files.append(
+                    {
+                        "name": name,
+                        "relative_path": relative_path,
+                        "size": size,
+                        "category": category,
+                    }
+                )
+            if len(files) >= max_files:
+                break
+    except OSError:
+        complete = False
+
+    total = sum(item["size"] for item in files)
+    categories = [
+        {
+            "key": key,
+            "label": category_labels[key],
+            "size": values["size"],
+            "file_count": values["file_count"],
+            "percent": round(values["size"] * 100 / total, 1) if total else 0,
+        }
+        for key, values in category_totals.items()
+    ]
+    categories.sort(key=lambda item: item["size"], reverse=True)
+    files.sort(key=lambda item: item["size"], reverse=True)
+    return {
+        "total": total,
+        "file_count": len(files),
+        "complete": complete,
+        "categories": categories,
+        "files": files,
+    }
+
+
+def _conversation_agent_details(path: Path) -> dict:
+    """Summarize explicitly spawned agents without interpreting root-agent turns."""
+    agents: dict[str, dict] = {}
+    events_path = path / "events.jsonl"
+    try:
+        handle = events_path.open(encoding="utf-8", errors="replace")
+    except (OSError, UnicodeDecodeError):
+        return {
+            "agents": [],
+            "spawned_count": 0,
+            "totals": {"turns": 0, "tool_results": 0, "outputs": 0},
+        }
+
+    with handle:
+        for raw_line in handle:
+            if not raw_line.strip():
+                continue
+            try:
+                event = json.loads(raw_line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict):
+                continue
+            event_type = event.get("type") if isinstance(event.get("type"), str) else ""
+            raw_agent_id = event.get("agent_id")
+            if not isinstance(raw_agent_id, str) or not raw_agent_id:
+                continue
+            depth = event.get("depth") if isinstance(event.get("depth"), int) else None
+            agent = agents.setdefault(
+                raw_agent_id,
+                {
+                    "id": raw_agent_id,
+                    "name": "",
+                    "spawned": bool(isinstance(depth, int) and depth > 0),
+                    "status": "",
+                    "started_at": "",
+                    "completed_at": "",
+                    "turn_count": 0,
+                    "tool_result_count": 0,
+                    "output_count": 0,
+                },
+            )
+            if isinstance(depth, int) and depth > 0:
+                agent["spawned"] = True
+            timestamp = event.get("timestamp")
+            name = event.get("agent_name")
+            if isinstance(name, str) and name:
+                agent["name"] = name
+            if event_type == "iteration":
+                agent["turn_count"] += 1
+            elif event_type == "tool_result":
+                agent["tool_result_count"] += 1
+            elif event_type == "file_output":
+                agent["output_count"] += 1
+            elif event_type == "agent_started":
+                agent["started_at"] = timestamp if isinstance(timestamp, str) else ""
+                parent = event.get("parent_agent_id")
+                if isinstance(parent, str) and parent:
+                    agent["spawned"] = True
+            elif event_type == "agent_completed":
+                agent["completed_at"] = timestamp if isinstance(timestamp, str) else ""
+                status = event.get("status")
+                if isinstance(status, str):
+                    agent["status"] = status
+
+    result = [agent for agent in agents.values() if agent["spawned"]]
+    for agent in result:
+        if not agent["name"]:
+            agent["name"] = "Spawned agent"
+    result.sort(key=lambda item: (item["started_at"], item["id"]))
+    return {
+        "agents": result,
+        "spawned_count": len(result),
+        "totals": {
+            "turns": sum(item["turn_count"] for item in result),
+            "tool_results": sum(item["tool_result_count"] for item in result),
+            "outputs": sum(item["output_count"] for item in result),
+        },
+    }
+
+
 def _scan_conversations() -> list[dict]:
     conversations: list[dict] = []
     for root, archived in _conversation_roots():
@@ -534,6 +697,30 @@ def _scan_artifacts(conversations: list[dict] | None = None) -> list[dict]:
         )
     artifacts.sort(key=lambda item: item["updated_at"], reverse=True)
     return artifacts
+
+
+def _attach_artifact_stats(conversations: list[dict], artifacts: list[dict]) -> None:
+    stats: dict[str, dict[str, int]] = defaultdict(
+        lambda: {"count": 0, "present": 0, "missing": 0, "bytes": 0}
+    )
+    for artifact in artifacts:
+        conversation_id = artifact.get("conversation_id")
+        if not conversation_id:
+            continue
+        bucket = stats[conversation_id]
+        bucket["count"] += 1
+        if artifact["status"] == "present":
+            bucket["present"] += 1
+            bucket["bytes"] += artifact["size"]
+        else:
+            bucket["missing"] += 1
+    for conversation in conversations:
+        bucket = stats[conversation["id"]]
+        conversation["artifact_count"] = bucket["count"]
+        conversation["present_artifact_count"] = bucket["present"]
+        conversation["missing_artifact_count"] = bucket["missing"]
+        conversation["artifact_bytes"] = bucket["bytes"]
+        conversation["total_size"] = conversation.get("size", 0) + bucket["bytes"]
 
 
 def _file_item(
@@ -781,6 +968,57 @@ def assign_items(project_id: str, items: list[dict]) -> dict:
 
 
 @action
+def assign_conversation_bundle(project_id: str, conversation_id: str) -> dict:
+    """Add a conversation and every artifact indexed to it in one transaction."""
+    try:
+        conversation_id = _validate_reference("conversation", conversation_id)
+        artifact_ids: list[str] = []
+        seen: set[str] = set()
+        for entry in _load_artifact_index():
+            artifact_id = entry.get("id")
+            if (
+                entry.get("conversation_id") == conversation_id
+                and isinstance(artifact_id, str)
+                and artifact_id
+                and artifact_id not in seen
+            ):
+                seen.add(artifact_id)
+                artifact_ids.append(artifact_id)
+
+        references = [
+            ("conversation", conversation_id),
+            *(("artifact", artifact_id) for artifact_id in artifact_ids),
+        ]
+        now = _now()
+        added_by_type = {"conversation": 0, "artifact": 0}
+        with _database() as connection:
+            _project_or_error(connection, project_id)
+            for item_type, item_id in references:
+                cursor = connection.execute(
+                    "INSERT OR IGNORE INTO project_items"
+                    "(project_id, item_type, item_id, note, added_at) "
+                    "VALUES (?, ?, ?, '', ?)",
+                    (project_id, item_type, item_id, now),
+                )
+                added_by_type[item_type] += cursor.rowcount
+            connection.execute(
+                "UPDATE projects SET updated_at = ? WHERE id = ?", (now, project_id)
+            )
+        added = added_by_type["conversation"] + added_by_type["artifact"]
+        return {
+            "success": True,
+            "added": added,
+            "conversation_added": bool(added_by_type["conversation"]),
+            "artifacts_added": added_by_type["artifact"],
+            "artifact_total": len(artifact_ids),
+            "already_present": len(references) - added,
+            "source_data_changed": False,
+        }
+    except (TypeError, ValueError) as exc:
+        return {"error": str(exc)}
+
+
+@action
 def remove_project_item(project_id: str, item_type: str, item_id: str) -> dict:
     """Remove a virtual assignment without changing the referenced source item."""
     try:
@@ -834,26 +1072,82 @@ def list_conversations(
     query: str = "",
     assignment: str = "all",
     archive: str = "all",
+    artifact_filter: str = "all",
+    sort: str = "activity",
     limit: int = 250,
 ) -> dict:
     """List active and archived conversations with storage metadata."""
     conversations = _scan_conversations()
+    _attach_artifact_stats(conversations, _scan_artifacts(conversations))
     assignments = _assignment_map("conversation")
     _attach_assignments(conversations, "conversation", assignments)
     if archive == "active":
         conversations = [item for item in conversations if not item["archived"]]
     elif archive == "archived":
         conversations = [item for item in conversations if item["archived"]]
+    if artifact_filter == "with":
+        conversations = [item for item in conversations if item["artifact_count"] > 0]
+    elif artifact_filter == "without":
+        conversations = [item for item in conversations if item["artifact_count"] == 0]
+    elif artifact_filter == "missing":
+        conversations = [
+            item for item in conversations if item["missing_artifact_count"] > 0
+        ]
     conversations = _filter_assignment(conversations, assignment)
     conversations = [
         item for item in conversations if _matches_query(item, query.strip())
     ]
+    if sort == "total_size":
+        conversations.sort(
+            key=lambda item: (item["total_size"], item["last_activity"]),
+            reverse=True,
+        )
     total = len(conversations)
     conversations = conversations[: _clamp_limit(limit)]
     return {
         "conversations": conversations,
         "total": total,
         "returned": len(conversations),
+    }
+
+
+@action
+def get_conversation_details(conversation_id: str) -> dict:
+    """Return a lazy-loaded storage, artifact, and agent view for one chat."""
+    located = _conversation_dir(conversation_id)
+    if located is None:
+        return {"error": "Conversation not found."}
+    path, archived = located
+    conversation = _conversation_summary(path, archived)
+    if conversation is None:
+        return {"error": "Conversation metadata could not be read."}
+
+    conversations = _scan_conversations()
+    artifacts = [
+        item
+        for item in _scan_artifacts(conversations)
+        if item["conversation_id"] == conversation_id
+    ]
+    assignments = _assignment_map()
+    _attach_assignments([conversation], "conversation", assignments)
+    _attach_assignments(artifacts, "artifact", assignments)
+    _attach_artifact_stats([conversation], artifacts)
+    storage = _conversation_storage_details(path)
+    agent_activity = _conversation_agent_details(path)
+    present_artifacts = [item for item in artifacts if item["status"] == "present"]
+    artifact_summary = {
+        "count": len(artifacts),
+        "present_count": len(present_artifacts),
+        "missing_count": len(artifacts) - len(present_artifacts),
+        "bytes": sum(item["size"] for item in present_artifacts),
+    }
+    return {
+        "conversation": conversation,
+        "storage": storage,
+        "agent_activity": agent_activity,
+        "artifact_summary": artifact_summary,
+        "artifacts": artifacts,
+        "related_bytes": storage["total"] + artifact_summary["bytes"],
     }
 
 
@@ -927,13 +1221,14 @@ def get_inbox(query: str = "") -> dict:
     needle = query.strip()
     assignments = _assignment_map()
     conversations = _scan_conversations()
+    artifacts = _scan_artifacts(conversations)
+    _attach_artifact_stats(conversations, artifacts)
     _attach_assignments(conversations, "conversation", assignments)
     conversations = [
         item
         for item in conversations
         if not item["projects"] and _matches_query(item, needle)
     ][:40]
-    artifacts = _scan_artifacts(conversations=_scan_conversations())
     _attach_assignments(artifacts, "artifact", assignments)
     artifacts = [
         item
@@ -987,6 +1282,7 @@ def get_project_items(project_id: str, query: str = "") -> dict:
         artifacts = {
             item["id"]: item for item in _scan_artifacts(list(conversations.values()))
         }
+        _attach_artifact_stats(list(conversations.values()), list(artifacts.values()))
         items: list[dict] = []
         sized_folders = 0
         for row in reference_rows:
@@ -1060,16 +1356,27 @@ def get_dashboard() -> dict:
     """Return a compact overview for the app's landing page."""
     with _database() as connection:
         projects = _all_projects(connection)
+        welcome_seen = connection.execute(
+            "SELECT value FROM app_settings WHERE key = 'welcome_seen'"
+        ).fetchone()
+        first_run = welcome_seen is None and not projects
+        if welcome_seen is None:
+            connection.execute(
+                "INSERT INTO app_settings(key, value, updated_at) VALUES (?, ?, ?)",
+                ("welcome_seen", "true", _now()),
+            )
     assignments = _assignment_map()
     conversations = _scan_conversations()
-    _attach_assignments(conversations, "conversation", assignments)
     artifacts = _scan_artifacts(conversations)
+    _attach_artifact_stats(conversations, artifacts)
+    _attach_assignments(conversations, "conversation", assignments)
     _attach_assignments(artifacts, "artifact", assignments)
     missing = [item for item in artifacts if item["status"] == "missing"]
     orphaned = [item for item in artifacts if item["orphaned"]]
     unassigned_conversations = [item for item in conversations if not item["projects"]]
     unassigned_artifacts = [item for item in artifacts if not item["projects"]]
     return {
+        "first_run": first_run,
         "projects": projects,
         "stats": {
             "projects": len(projects),

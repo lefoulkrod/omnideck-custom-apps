@@ -113,11 +113,13 @@ def create_project(name: str = "Garden") -> dict:
 
 def test_only_intended_functions_are_actions() -> None:
     expected = {
+        "assign_conversation_bundle",
         "assign_items",
         "browse_files",
         "create_project",
         "delete_project",
         "get_dashboard",
+        "get_conversation_details",
         "get_inbox",
         "get_project_items",
         "get_storage_report",
@@ -148,6 +150,29 @@ def test_project_state_is_created_only_in_data_directory(
     assert app.DATABASE_PATH.is_file()
     assert list(state.iterdir()) == []
     assert list(files.iterdir()) == []
+
+
+def test_welcome_is_first_run_only_and_stored_in_app_data(
+    roots: tuple[Path, Path, Path],
+) -> None:
+    state, files, data = roots
+
+    first = app.get_dashboard()
+    second = app.get_dashboard()
+
+    assert first["first_run"] is True
+    assert second["first_run"] is False
+    assert app.DATABASE_PATH.is_relative_to(data)
+    assert list(state.iterdir()) == []
+    assert list(files.iterdir()) == []
+
+
+def test_existing_project_skips_first_run_welcome(
+    roots: tuple[Path, Path, Path],
+) -> None:
+    create_project()
+
+    assert app.get_dashboard()["first_run"] is False
 
 
 def test_project_validation_and_update(roots: tuple[Path, Path, Path]) -> None:
@@ -205,6 +230,204 @@ def test_conversation_metadata_includes_archive_and_storage(
     assert archived["archived"] is True
     assert archived["turn_count"] == 1
     assert archived["size"] > 0
+
+
+def test_conversation_details_explain_storage_artifacts_and_spawned_agents(
+    roots: tuple[Path, Path, Path],
+) -> None:
+    state, files, _ = roots
+    conversation = add_conversation(state, "chat-1")
+    (conversation / "browser_tabs.json").write_text(
+        json.dumps({"tabs": ["https://example.com"]}), encoding="utf-8"
+    )
+    with (conversation / "events.jsonl").open("a", encoding="utf-8") as handle:
+        handle.write(
+            json.dumps(
+                {
+                    "type": "agent_started",
+                    "timestamp": "2026-07-01T10:06:00+00:00",
+                    "agent_id": "root.researcher.2",
+                    "agent_name": "Researcher",
+                    "profile_name": "research",
+                    "depth": 1,
+                    "parent_agent_id": "root.default.1",
+                    "instruction": "Find the best planting schedule",
+                }
+            )
+            + "\n"
+        )
+        handle.write(
+            json.dumps(
+                {
+                    "type": "iteration",
+                    "timestamp": "2026-07-01T10:07:00+00:00",
+                    "agent_id": "root.researcher.2",
+                    "agent_name": "Researcher",
+                    "depth": 1,
+                }
+            )
+            + "\n"
+        )
+        handle.write(
+            json.dumps(
+                {
+                    "type": "tool_result",
+                    "timestamp": "2026-07-01T10:07:30+00:00",
+                    "agent_id": "root.researcher.2",
+                    "agent_name": "Researcher",
+                    "depth": 1,
+                }
+            )
+            + "\n"
+        )
+        handle.write(
+            json.dumps(
+                {
+                    "type": "agent_completed",
+                    "timestamp": "2026-07-01T10:08:00+00:00",
+                    "agent_id": "root.researcher.2",
+                    "agent_name": "Researcher",
+                    "depth": 1,
+                    "status": "completed",
+                }
+            )
+            + "\n"
+        )
+    first_artifact = add_artifact(
+        state, files, artifact_id="present", conversation_id="chat-1"
+    )
+    first_artifact.write_bytes(b"artifact contents")
+    add_artifact(
+        state,
+        files,
+        artifact_id="missing",
+        conversation_id="chat-1",
+        present=False,
+    )
+
+    result = app.get_conversation_details("chat-1")
+
+    assert result["conversation"]["artifact_count"] == 2
+    assert result["artifact_summary"] == {
+        "count": 2,
+        "present_count": 1,
+        "missing_count": 1,
+        "bytes": len(b"artifact contents"),
+    }
+    assert result["related_bytes"] == (
+        result["storage"]["total"] + result["artifact_summary"]["bytes"]
+    )
+    assert (
+        sum(item["size"] for item in result["storage"]["categories"])
+        == result["storage"]["total"]
+    )
+    assert {item["key"] for item in result["storage"]["categories"]} >= {
+        "events",
+        "metadata",
+        "browser",
+    }
+    spawned = next(
+        item
+        for item in result["agent_activity"]["agents"]
+        if item["id"] == "root.researcher.2"
+    )
+    assert len(result["agent_activity"]["agents"]) == 1
+    assert spawned["spawned"] is True
+    assert spawned["turn_count"] == 1
+    assert spawned["tool_result_count"] == 1
+    assert spawned["status"] == "completed"
+    assert "profile_name" not in spawned
+    assert "parent_agent_id" not in spawned
+    assert result["agent_activity"]["totals"] == {
+        "turns": 1,
+        "tool_results": 1,
+        "outputs": 0,
+    }
+
+
+def test_conversations_filter_by_artifacts_and_sort_by_total_storage(
+    roots: tuple[Path, Path, Path],
+) -> None:
+    state, files, _ = roots
+    add_conversation(state, "with-artifacts", title="With artifacts")
+    add_conversation(state, "without-artifacts", title="Without artifacts")
+    add_conversation(state, "missing-artifact", title="Missing artifact")
+    artifact = add_artifact(
+        state,
+        files,
+        artifact_id="large",
+        conversation_id="with-artifacts",
+    )
+    artifact.write_bytes(b"x" * 4096)
+    add_artifact(
+        state,
+        files,
+        artifact_id="missing",
+        conversation_id="missing-artifact",
+        present=False,
+    )
+
+    with_artifacts = app.list_conversations(artifact_filter="with")
+    without_artifacts = app.list_conversations(artifact_filter="without")
+    missing_artifacts = app.list_conversations(artifact_filter="missing")
+    by_total_size = app.list_conversations(sort="total_size")
+
+    assert {item["id"] for item in with_artifacts["conversations"]} == {
+        "with-artifacts",
+        "missing-artifact",
+    }
+    assert [item["id"] for item in without_artifacts["conversations"]] == [
+        "without-artifacts"
+    ]
+    assert [item["id"] for item in missing_artifacts["conversations"]] == [
+        "missing-artifact"
+    ]
+    largest = by_total_size["conversations"][0]
+    assert largest["id"] == "with-artifacts"
+    assert largest["total_size"] == largest["size"] + 4096
+
+
+def test_assign_conversation_bundle_is_atomic_idempotent_and_non_destructive(
+    roots: tuple[Path, Path, Path],
+) -> None:
+    state, files, _ = roots
+    conversation = add_conversation(state, "chat-1")
+    present = add_artifact(
+        state, files, artifact_id="present", conversation_id="chat-1"
+    )
+    add_artifact(
+        state,
+        files,
+        artifact_id="missing",
+        conversation_id="chat-1",
+        present=False,
+    )
+    conversation_before = (conversation / "events.jsonl").read_bytes()
+    artifact_before = present.read_bytes()
+    project = create_project()
+
+    first = app.assign_conversation_bundle(project["id"], "chat-1")
+    second = app.assign_conversation_bundle(project["id"], "chat-1")
+    project_items = app.get_project_items(project["id"])["items"]
+
+    assert first == {
+        "success": True,
+        "added": 3,
+        "conversation_added": True,
+        "artifacts_added": 2,
+        "artifact_total": 2,
+        "already_present": 0,
+        "source_data_changed": False,
+    }
+    assert second["added"] == 0
+    assert second["already_present"] == 3
+    assert {(item["type"], item["id"]) for item in project_items} == {
+        ("conversation", "chat-1"),
+        ("artifact", "present"),
+        ("artifact", "missing"),
+    }
+    assert (conversation / "events.jsonl").read_bytes() == conversation_before
+    assert present.read_bytes() == artifact_before
 
 
 def test_corrupt_conversation_does_not_hide_healthy_conversations(

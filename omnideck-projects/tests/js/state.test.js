@@ -6,9 +6,9 @@ import {
   formatBytes,
   itemKey,
   parseRoute,
-  projectPrompt,
   routeHash,
   splitItemKey,
+  typeIconClass,
 } from '../../web/state.js';
 
 describe('hash routing', () => {
@@ -47,11 +47,8 @@ it('builds encoded same-origin file URLs', () => {
   expect(fileUrl('relative.txt')).toBe('#');
 });
 
-it('builds a non-destructive project chat prompt', () => {
-  const prompt = projectPrompt(
-    { name: 'Trip' },
-    [{ type: 'conversation' }, { type: 'artifact' }, { type: 'artifact' }],
-  );
-  expect(prompt).toContain('1 conversation, 2 artifacts');
-  expect(prompt).toContain('Do not move or delete files');
+it('uses the same Bootstrap Icon vocabulary as the host app', () => {
+  expect(typeIconClass('conversation')).toBe('bi-chat-left-text');
+  expect(typeIconClass('artifact')).toBe('bi-collection');
+  expect(typeIconClass('folder')).toBe('bi-folder');
 });

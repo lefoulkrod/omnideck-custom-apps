@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <title>Omnideck Projects</title>
+  <link rel="stylesheet" href="fonts/bootstrap-icons.css">
   <link rel="stylesheet" href="app.css">
 </head>
 <body>
@@ -16,21 +17,21 @@
           <strong>Omnideck</strong>
           <span>Projects</span>
         </div>
-        <button class="icon-button sidebar-close" id="sidebar-close" aria-label="Close navigation">×</button>
+        <button class="icon-button sidebar-close" id="sidebar-close" aria-label="Close navigation"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
       </div>
 
       <nav class="primary-nav" aria-label="Main navigation">
-        <a href="#/home" data-route="home"><span class="nav-icon">⌂</span>Home</a>
-        <a href="#/inbox" data-route="inbox"><span class="nav-icon">⌄</span>Inbox <span class="nav-badge" id="inbox-badge"></span></a>
-        <a href="#/conversations" data-route="conversations"><span class="nav-icon">◌</span>Conversations</a>
-        <a href="#/artifacts" data-route="artifacts"><span class="nav-icon">◇</span>Artifacts</a>
-        <a href="#/files" data-route="files"><span class="nav-icon">▤</span>Files & folders</a>
-        <a href="#/storage" data-route="storage"><span class="nav-icon">◎</span>Storage & cleanup</a>
+        <a href="#/home" data-route="home"><i class="nav-icon bi bi-house-door" aria-hidden="true"></i>Home</a>
+        <a href="#/inbox" data-route="inbox"><i class="nav-icon bi bi-inbox" aria-hidden="true"></i>Inbox <span class="nav-badge" id="inbox-badge"></span></a>
+        <a href="#/conversations" data-route="conversations"><i class="nav-icon bi bi-chat-left-text" aria-hidden="true"></i>Conversations</a>
+        <a href="#/artifacts" data-route="artifacts"><i class="nav-icon bi bi-collection" aria-hidden="true"></i>Artifacts</a>
+        <a href="#/files" data-route="files"><i class="nav-icon bi bi-folder2-open" aria-hidden="true"></i>Files & folders</a>
+        <a href="#/storage" data-route="storage"><i class="nav-icon bi bi-hdd" aria-hidden="true"></i>Storage & cleanup</a>
       </nav>
 
       <div class="sidebar-section-heading">
         <span>Projects</span>
-        <button class="icon-button" id="new-project-sidebar" title="New project" aria-label="New project">+</button>
+        <button class="icon-button" id="new-project-sidebar" title="New project" aria-label="New project"><i class="bi bi-plus-lg" aria-hidden="true"></i></button>
       </div>
       <nav class="project-nav" id="project-nav" aria-label="Projects"></nav>
 
@@ -43,19 +44,18 @@
 
     <section class="workspace">
       <header class="topbar">
-        <button class="icon-button menu-button" id="menu-button" aria-label="Open navigation">☰</button>
+        <button class="icon-button menu-button" id="menu-button" aria-label="Open navigation"><i class="bi bi-list" aria-hidden="true"></i></button>
         <div class="topbar-title">
           <span class="eyebrow" id="page-eyebrow">Your Omnideck</span>
           <h1 id="page-title">Home</h1>
         </div>
         <label class="search-box">
-          <span aria-hidden="true">⌕</span>
+          <i class="bi bi-search" aria-hidden="true"></i>
           <input id="global-search" type="search" placeholder="Search this view" autocomplete="off">
           <kbd>/</kbd>
         </label>
-        <button class="button subtle" id="ask-omnideck"><span aria-hidden="true">✦</span> Ask Omnideck</button>
-        <button class="icon-button bordered" id="refresh-button" title="Refresh" aria-label="Refresh">↻</button>
-        <button class="button primary" id="new-project"><span aria-hidden="true">+</span> New project</button>
+        <button class="icon-button bordered" id="refresh-button" title="Refresh" aria-label="Refresh"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i></button>
+        <button class="button primary" id="new-project"><i class="bi bi-plus-lg" aria-hidden="true"></i> New project</button>
       </header>
 
       <main class="content" id="content" tabindex="-1">
@@ -84,7 +84,7 @@
           <span class="eyebrow" id="project-modal-eyebrow">Create</span>
           <h2 id="project-modal-title">New project</h2>
         </div>
-        <button class="icon-button" type="button" data-close-modal aria-label="Close">×</button>
+        <button class="icon-button" type="button" data-close-modal aria-label="Close"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
       </div>
       <label class="field">
         <span>Name</span>

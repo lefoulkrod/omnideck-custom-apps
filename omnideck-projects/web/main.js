@@ -6,10 +6,9 @@ import {
   formatDate,
   itemKey,
   parseRoute,
-  projectPrompt,
   routeHash,
   splitItemKey,
-  typeGlyph,
+  typeIconClass,
   typeLabel,
 } from './state.js';
 
@@ -21,7 +20,6 @@ const dom = {
   pageEyebrow: document.querySelector('#page-eyebrow'),
   search: document.querySelector('#global-search'),
   refresh: document.querySelector('#refresh-button'),
-  ask: document.querySelector('#ask-omnideck'),
   newProject: document.querySelector('#new-project'),
   newProjectSidebar: document.querySelector('#new-project-sidebar'),
   projectNav: document.querySelector('#project-nav'),
@@ -63,9 +61,14 @@ const state = {
   currentProject: null,
   currentProjectItems: [],
   storageReport: null,
+  welcomeConsumed: false,
+  visibleResources: new Map(),
+  conversationDetails: new Map(),
   filters: {
     conversationsArchive: 'all',
     conversationsAssignment: 'all',
+    conversationsArtifacts: 'all',
+    conversationsSort: 'activity',
     artifactsStatus: 'all',
     artifactsAssignment: 'all',
   },
@@ -128,7 +131,8 @@ function statusPill(item) {
 
 function itemSecondary(item) {
   if (item.type === 'conversation') {
-    return `${item.turn_count} ${item.turn_count === 1 ? 'turn' : 'turns'} · ${formatBytes(item.size)}${item.first_message ? `<br>${escapeHtml(item.first_message)}` : ''}`;
+    const artifactCount = Number(item.artifact_count) || 0;
+    return `${formatBytes(item.total_size)} total · ${formatBytes(item.size)} conversation + ${formatBytes(item.artifact_bytes)} artifacts · ${artifactCount} ${artifactCount === 1 ? 'artifact' : 'artifacts'} · ${item.turn_count} ${item.turn_count === 1 ? 'turn' : 'turns'}${item.first_message ? `<br>${escapeHtml(item.first_message)}` : ''}`;
   }
   if (item.type === 'artifact') {
     const source = item.conversation_title ? `From ${escapeHtml(item.conversation_title)}` : 'Source conversation unavailable';
@@ -154,6 +158,7 @@ function itemTitle(item, options = {}) {
 
 function itemRow(item, options = {}) {
   const key = itemKey(item);
+  state.visibleResources.set(key, item);
   const checked = state.selected.has(key);
   const remove = options.projectId
     ? `<button class="button subtle small" data-action="remove-item" data-project-id="${encoded(options.projectId)}" data-type="${escapeHtml(item.type)}" data-id="${encoded(item.id)}">Remove</button>`
@@ -161,10 +166,13 @@ function itemRow(item, options = {}) {
   const note = options.projectId
     ? `<button class="button subtle small" data-action="edit-note" data-project-id="${encoded(options.projectId)}" data-type="${escapeHtml(item.type)}" data-id="${encoded(item.id)}" data-note="${encoded(item.project_note || '')}">Note</button>`
     : '';
+  const details = item.type === 'conversation'
+    ? `<button class="button subtle small" data-action="conversation-details" data-id="${encoded(item.id)}" data-default-project-id="${encoded(options.projectId || '')}" aria-expanded="false"><i class="bi bi-info-circle" aria-hidden="true"></i> Details</button>`
+    : '';
   return `
-    <div class="item-row ${checked ? 'selected' : ''}">
+    <div class="item-row ${checked ? 'selected' : ''}" data-resource-row data-type="${escapeHtml(item.type)}" data-id="${encoded(item.id)}">
       <input class="item-check" type="checkbox" aria-label="Select ${escapeHtml(item.title)}" data-select-item data-type="${escapeHtml(item.type)}" data-id="${encoded(item.id)}" ${checked ? 'checked' : ''}>
-      <span class="type-icon ${escapeHtml(item.type)}" title="${typeLabel(item.type)}">${typeGlyph(item.type)}</span>
+      <span class="type-icon ${escapeHtml(item.type)}" title="${typeLabel(item.type)}"><i class="bi ${typeIconClass(item.type)}" aria-hidden="true"></i></span>
       <div class="item-primary">
         ${itemTitle(item, options)}
         ${projectPills(item.projects)}
@@ -173,7 +181,8 @@ function itemRow(item, options = {}) {
       <div class="item-secondary">${itemSecondary(item)}</div>
       <div class="item-actions">
         <div class="item-meta">${itemMeta(item)}</div>
-        <button class="icon-button bordered" data-action="ask-item" data-type="${escapeHtml(item.type)}" data-id="${encoded(item.id)}" title="Ask Omnideck about this" aria-label="Ask Omnideck about ${escapeHtml(item.title)}">✦</button>
+        ${details}
+        <button class="icon-button bordered" data-action="ask-item" data-type="${escapeHtml(item.type)}" data-id="${encoded(item.id)}" title="Ask about this resource" aria-label="Ask about ${escapeHtml(item.title)}"><i class="bi bi-stars" aria-hidden="true"></i></button>
         ${note}${remove}
       </div>
     </div>`;
@@ -184,10 +193,88 @@ function recentItem(item) {
     ? `${item.turn_count} turns · ${formatBytes(item.size)}`
     : `${formatBytes(item.size)} · ${item.status}`;
   return `<div class="recent-item">
-    <span class="type-icon ${escapeHtml(item.type)}">${typeGlyph(item.type)}</span>
+    <span class="type-icon ${escapeHtml(item.type)}"><i class="bi ${typeIconClass(item.type)}" aria-hidden="true"></i></span>
     <div class="item-primary"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(detail)}</small></div>
     <span class="item-meta">${escapeHtml(formatDate(item.last_activity || item.updated_at))}</span>
   </div>`;
+}
+
+function bundleProjectOptions(preferredProjectId = '') {
+  const selectedProjectId = [preferredProjectId]
+    .find((id) => state.projects.some((project) => project.id === id))
+    || state.projects[0]?.id
+    || '';
+  return {
+    selectedProjectId,
+    html: state.projects.map((project) => `<option value="${escapeHtml(project.id)}" ${project.id === selectedProjectId ? 'selected' : ''}>${escapeHtml(project.name)}</option>`).join(''),
+  };
+}
+
+function conversationAgentCard(agent, index) {
+  const activity = [
+    `${agent.turn_count} ${agent.turn_count === 1 ? 'turn' : 'turns'}`,
+    agent.tool_result_count ? `${agent.tool_result_count} tool results` : '',
+    agent.output_count ? `${agent.output_count} outputs` : '',
+  ].filter(Boolean).join(' · ');
+  return `<article class="agent-card">
+    <div class="agent-card-heading">
+      <span class="agent-icon"><i class="bi bi-robot" aria-hidden="true"></i></span>
+      <div><strong>Spawned agent ${index + 1}</strong><span>${escapeHtml(agent.name)}</span></div>
+      ${agent.status ? `<span class="status-pill">${escapeHtml(agent.status)}</span>` : ''}
+    </div>
+    <p class="agent-activity">${escapeHtml(activity)}</p>
+  </article>`;
+}
+
+function conversationDetailsPanel(details, preferredProjectId = '') {
+  const conversation = details.conversation;
+  const storage = details.storage;
+  const artifactSummary = details.artifact_summary;
+  const agentActivity = details.agent_activity;
+  const projectOptions = bundleProjectOptions(preferredProjectId);
+  const storageRows = storage.categories.map((category) => `<div class="storage-category">
+    <div><strong>${escapeHtml(category.label)}</strong><span>${category.file_count} ${category.file_count === 1 ? 'file' : 'files'} · ${formatBytes(category.size)}</span></div>
+    <div class="storage-bar" aria-label="${escapeHtml(category.label)}: ${category.percent}%"><span style="width:${Math.max(1, Math.min(100, Number(category.percent) || 0))}%"></span></div>
+    <span>${category.percent}%</span>
+  </div>`).join('');
+  const fileRows = storage.files.slice(0, 8).map((file) => `<div class="detail-file-row">
+    <i class="bi bi-file-earmark" aria-hidden="true"></i><span title="${escapeHtml(file.relative_path)}">${escapeHtml(file.relative_path)}</span><strong>${formatBytes(file.size)}</strong>
+  </div>`).join('');
+  const artifactRows = details.artifacts.slice(0, 20).map((artifact) => `<div class="detail-artifact-row">
+    <span class="type-icon artifact"><i class="bi bi-collection" aria-hidden="true"></i></span>
+    <div>${artifact.status === 'present' && artifact.path ? `<a href="${escapeHtml(fileUrl(artifact.path))}" target="_blank" rel="noopener">${escapeHtml(artifact.title)}</a>` : `<strong>${escapeHtml(artifact.title)}</strong>`}<span>${artifact.status === 'present' ? formatBytes(artifact.size) : 'Missing file'}${artifact.agent_name ? ` · ${escapeHtml(artifact.agent_name)}` : ''}</span></div>
+    ${projectPills(artifact.projects)}
+  </div>`).join('');
+  const bundleControls = state.projects.length
+    ? `<div class="bundle-controls">
+        <label><span class="sr-only">Choose project</span><select data-bundle-project>${projectOptions.html}</select></label>
+        <button class="button primary" data-action="assign-conversation-bundle" data-id="${encoded(conversation.id)}"><i class="bi bi-folder-plus" aria-hidden="true"></i> Add conversation + ${artifactSummary.count} ${artifactSummary.count === 1 ? 'artifact' : 'artifacts'}</button>
+      </div>`
+    : '<button class="button primary" data-action="new-project"><i class="bi bi-plus-lg" aria-hidden="true"></i> Create a project first</button>';
+  const spawnedAgentsSection = agentActivity.spawned_count
+    ? `<section class="detail-section"><div class="detail-section-heading"><h4><i class="bi bi-robot" aria-hidden="true"></i> Spawned agents</h4><span>${agentActivity.spawned_count}</span></div><div class="agent-list">${agentActivity.agents.map(conversationAgentCard).join('')}</div></section>`
+    : '';
+  return `<section class="conversation-details" data-conversation-details="${encoded(conversation.id)}">
+    <div class="conversation-detail-heading">
+      <div><span class="eyebrow">Conversation resource</span><h3>${escapeHtml(conversation.title)}</h3><p>Conversation data and linked artifact files are counted separately.</p></div>
+      <div class="heading-actions">
+        <button class="button subtle small" data-action="ask-conversation-details" data-id="${encoded(conversation.id)}"><i class="bi bi-stars" aria-hidden="true"></i> Ask about this</button>
+        <button class="icon-button" data-action="close-conversation-details" aria-label="Close conversation details"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
+      </div>
+    </div>
+    <div class="detail-stats">
+      <div><span>Conversation data</span><strong>${formatBytes(storage.total)}</strong><small>${storage.file_count} ${storage.file_count === 1 ? 'file' : 'files'}${storage.complete ? '' : ' (partial)'}</small></div>
+      <div><span>Linked artifact files</span><strong>${formatBytes(artifactSummary.bytes)}</strong><small>${artifactSummary.count} indexed · ${artifactSummary.missing_count} missing</small></div>
+      <div><span>History</span><strong>${conversation.event_count} events</strong><small>${conversation.turn_count} ${conversation.turn_count === 1 ? 'turn' : 'turns'} · ${escapeHtml(formatDate(conversation.started_at))}</small></div>
+      <div><span>Spawned agents</span><strong>${agentActivity.spawned_count}</strong><small>${agentActivity.totals.turns} turns · ${agentActivity.totals.tool_results} tool results · ${agentActivity.totals.outputs} outputs</small></div>
+    </div>
+    <div class="conversation-detail-grid ${agentActivity.spawned_count ? '' : 'single'}">
+      <section class="detail-section"><div class="detail-section-heading"><h4><i class="bi bi-hdd" aria-hidden="true"></i> Conversation storage</h4><span>${formatBytes(storage.total)}</span></div>${storageRows || '<p class="detail-empty">No conversation files were readable.</p>'}<div class="detail-files">${fileRows}</div></section>
+      ${spawnedAgentsSection}
+    </div>
+    <section class="detail-section artifact-detail-section"><div class="detail-section-heading"><h4><i class="bi bi-collection" aria-hidden="true"></i> Artifacts created</h4><span>${artifactSummary.count}</span></div>${artifactRows || '<p class="detail-empty">No artifacts are indexed to this conversation.</p>'}${details.artifacts.length > 20 ? `<p class="detail-empty">Showing the 20 largest/recent indexed entries.</p>` : ''}</section>
+    <section class="bundle-panel"><div><h4>Organize the whole conversation</h4><p>Add the conversation and every indexed artifact to one project. Missing artifact references are included; source content is never moved.</p></div>${bundleControls}</section>
+  </section>`;
 }
 
 function renderProjectNavigation() {
@@ -244,6 +331,8 @@ function attentionCard(count, title, description, route, good = false) {
 function renderHome() {
   setPage('Home');
   const data = state.dashboard;
+  const showWelcome = Boolean(data.first_run && !state.welcomeConsumed);
+  state.welcomeConsumed = true;
   const stats = data.stats;
   const query = dom.search.value.trim().toLowerCase();
   const projects = data.projects.filter((project) =>
@@ -254,10 +343,10 @@ function renderHome() {
     .slice(0, 6);
   const attention = data.attention;
   dom.content.innerHTML = `<div class="page">
-    <section class="welcome-panel">
+    ${showWelcome ? `<section class="welcome-panel">
       <div class="welcome-copy"><span class="eyebrow">A calmer place for everything</span><h2>Make sense of what Omnideck creates.</h2><p>Group conversations, artifacts, files, and folders around the work they belong to—without moving or rewriting the originals.</p></div>
       <button class="button light" data-action="new-project">Create your first project</button>
-    </section>
+    </section>` : ''}
     <section class="stats-grid">
       <div class="stat-card"><span class="stat-label">Projects</span><strong>${stats.projects}</strong><small>${stats.projects ? 'Virtual collections' : 'Ready when you are'}</small></div>
       <div class="stat-card"><span class="stat-label">Conversations</span><strong>${stats.conversations}</strong><small>${formatBytes(stats.conversation_bytes)} conversation data</small></div>
@@ -309,6 +398,8 @@ async function renderConversations() {
     query: dom.search.value.trim(),
     assignment: state.filters.conversationsAssignment,
     archive: state.filters.conversationsArchive,
+    artifact_filter: state.filters.conversationsArtifacts,
+    sort: state.filters.conversationsSort,
   });
   dom.content.innerHTML = `<div class="page">
     ${listHeading('Conversations', 'See conversation size, activity, and organization without opening the event logs.')}
@@ -319,6 +410,16 @@ async function renderConversations() {
         <option value="archived" ${state.filters.conversationsArchive === 'archived' ? 'selected' : ''}>Archived only</option>
       </select>
       <select data-filter="conversations-assignment" aria-label="Conversation organization">${projectAssignmentOptions(state.filters.conversationsAssignment)}</select>
+      <select data-filter="conversations-artifacts" aria-label="Conversation artifacts">
+        <option value="all" ${state.filters.conversationsArtifacts === 'all' ? 'selected' : ''}>All artifact counts</option>
+        <option value="with" ${state.filters.conversationsArtifacts === 'with' ? 'selected' : ''}>Has artifacts</option>
+        <option value="without" ${state.filters.conversationsArtifacts === 'without' ? 'selected' : ''}>No artifacts</option>
+        <option value="missing" ${state.filters.conversationsArtifacts === 'missing' ? 'selected' : ''}>Has missing artifacts</option>
+      </select>
+      <select data-filter="conversations-sort" aria-label="Sort conversations">
+        <option value="activity" ${state.filters.conversationsSort === 'activity' ? 'selected' : ''}>Newest activity</option>
+        <option value="total_size" ${state.filters.conversationsSort === 'total_size' ? 'selected' : ''}>Largest total storage</option>
+      </select>
       <span class="toolbar-count">${result.total} ${result.total === 1 ? 'conversation' : 'conversations'}</span>
     </div>
     <section class="data-panel">${result.conversations.length ? `<div class="item-list">${result.conversations.map((item) => itemRow(item)).join('')}</div>` : emptyState('No conversations found', 'Try another filter or search term.')}</section>
@@ -414,7 +515,6 @@ async function renderProject(projectId) {
     <section class="project-hero" style="--project-color:${escapeHtml(project.color)}">
       <div class="project-hero-main"><span class="project-color-block"></span><div><span class="eyebrow">Project</span><h2>${escapeHtml(project.name)}</h2><p>${escapeHtml(project.description || 'A virtual collection of related Omnideck work.')}</p>${projectTags(project)}</div></div>
       <div class="heading-actions">
-        <button class="button subtle" data-action="ask-project">✦ Ask Omnideck</button>
         <button class="button subtle" data-action="edit-project" data-project-id="${encoded(project.id)}">Edit</button>
         <button class="button subtle" data-action="delete-project" data-project-id="${encoded(project.id)}">Delete</button>
       </div>
@@ -432,7 +532,7 @@ async function renderProject(projectId) {
 
 function reportFileRow(item, extra = '') {
   return `<div class="recent-item">
-    <span class="type-icon file">▤</span>
+    <span class="type-icon file"><i class="bi bi-file-earmark" aria-hidden="true"></i></span>
     <div class="item-primary"><strong title="${escapeHtml(item.display_path)}">${escapeHtml(item.name || item.filename || item.title)}</strong><small>${escapeHtml(item.display_path || '')}${extra ? ` · ${escapeHtml(extra)}` : ''}</small></div>
     <span class="item-meta">${formatBytes(item.size)}</span>
   </div>`;
@@ -457,8 +557,8 @@ async function renderStorage() {
   const summary = state.storageReport.summary;
   const duplicates = state.storageReport.duplicates.map((group) => `<div class="duplicate-group"><strong>${group.copies} exact copies · ${formatBytes(group.potential_savings)} potentially recoverable</strong><ul>${group.files.map((path) => `<li>${escapeHtml(path)}</li>`).join('')}</ul></div>`).join('');
   dom.content.innerHTML = `<div class="page">
-    ${listHeading('Storage & cleanup', 'Review evidence and ask Omnideck for help before changing source content.', '<button class="button subtle" data-action="ask-cleanup">✦ Ask for a cleanup plan</button><button class="button primary" data-action="scan-storage">Scan again</button>')}
-    <section class="storage-intro"><div><span class="read-only-badge">Read-only report</span><h3>No cleanup action runs from this screen</h3><p>This report is intentionally explain-first. Use it to understand the environment, then ask Omnideck to help review specific candidates. Artifact storage is counted separately from conversation storage elsewhere in the app.</p></div><strong>${formatBytes(summary.bytes)}</strong></section>
+    ${listHeading('Storage & cleanup', 'Review evidence before changing source content.', '<button class="button primary" data-action="scan-storage"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i> Scan again</button>')}
+    <section class="storage-intro"><div><span class="read-only-badge">Read-only report</span><h3>No cleanup action runs from this screen</h3><p>Use this inventory to understand the environment and review specific files in their resource views. Artifact storage is counted separately from conversation storage elsewhere in the app.</p></div><strong>${formatBytes(summary.bytes)}</strong></section>
     <section class="report-grid">
       <div class="report-card"><span>Files scanned</span><strong>${summary.files}</strong><small>${summary.directories} folders${state.storageReport.truncated ? ' · scan limit reached' : ''}</small></div>
       <div class="report-card"><span>Large files</span><strong>${summary.large_files}</strong><small>25 MB or larger</small></div>
@@ -477,6 +577,7 @@ async function renderStorage() {
 
 async function renderRoute({ preserveContent = false } = {}) {
   state.route = parseRoute(location.hash);
+  state.visibleResources.clear();
   updateActiveNavigation();
   if (!preserveContent) showLoading();
   try {
@@ -553,6 +654,8 @@ async function refreshAll(message = '') {
 }
 
 function findKnownItem(type, id) {
+  const visible = state.visibleResources.get(itemKey(type, id));
+  if (visible) return visible;
   if (state.currentProjectItems?.length) {
     const match = state.currentProjectItems.find((item) => item.type === type && item.id === id);
     if (match) return match;
@@ -562,9 +665,12 @@ function findKnownItem(type, id) {
 
 function askAboutItem(type, id) {
   const item = findKnownItem(type, id);
-  const text = `Help me review this ${typeLabel(type).toLowerCase()} from Omnideck Projects: “${item.title}”. Explain what it is connected to, whether it seems organized appropriately, and suggest a useful next step. Do not move or delete anything unless I explicitly approve it.`;
-  composeChat(text, item);
-  showToast('Added context to Omnideck chat');
+  composeChat(`Tell me about this ${typeLabel(type).toLowerCase()} resource: “${item.title}”.`, {
+    kind: 'omnideck-resource',
+    source_app: 'omnideck-projects',
+    resource: item,
+  });
+  showToast('Resource added to Omnideck chat');
 }
 
 async function handleAction(button) {
@@ -612,12 +718,59 @@ async function handleAction(button) {
     showToast('Note saved');
   } else if (action === 'ask-item') {
     askAboutItem(button.dataset.type, decoded(button.dataset.id));
-  } else if (action === 'ask-project') {
-    composeChat(projectPrompt(state.currentProject, state.currentProjectItems), {
-      project: state.currentProject,
-      items: state.currentProjectItems.map(({ type, id, title, size, status }) => ({ type, id, title, size, status })),
+  } else if (action === 'conversation-details') {
+    const row = button.closest('[data-resource-row]');
+    const openPanel = row?.nextElementSibling;
+    if (openPanel?.matches('[data-conversation-details]')) {
+      openPanel.remove();
+      button.setAttribute('aria-expanded', 'false');
+      return;
+    }
+    button.disabled = true;
+    const conversationId = decoded(button.dataset.id);
+    try {
+      const details = await invoke('get_conversation_details', { conversation_id: conversationId });
+      state.conversationDetails.set(conversationId, details);
+      row?.insertAdjacentHTML('afterend', conversationDetailsPanel(details, decoded(button.dataset.defaultProjectId)));
+      button.setAttribute('aria-expanded', 'true');
+    } finally {
+      button.disabled = false;
+    }
+  } else if (action === 'close-conversation-details') {
+    const panel = button.closest('[data-conversation-details]');
+    panel?.previousElementSibling?.querySelector('[data-action="conversation-details"]')?.setAttribute('aria-expanded', 'false');
+    panel?.remove();
+  } else if (action === 'assign-conversation-bundle') {
+    const panel = button.closest('[data-conversation-details]');
+    const projectId = panel?.querySelector('[data-bundle-project]')?.value;
+    if (!projectId) {
+      showToast('Choose a project first', 'error');
+      return;
+    }
+    button.disabled = true;
+    try {
+      const result = await invoke('assign_conversation_bundle', {
+        project_id: projectId,
+        conversation_id: decoded(button.dataset.id),
+      });
+      const project = state.projects.find((candidate) => candidate.id === projectId);
+      await refreshAll(result.added
+        ? `Added the conversation and ${result.artifacts_added} ${result.artifacts_added === 1 ? 'artifact' : 'artifacts'} to ${project?.name || 'the project'}`
+        : `Everything is already in ${project?.name || 'that project'}`);
+    } finally {
+      button.disabled = false;
+    }
+  } else if (action === 'ask-conversation-details') {
+    const conversationId = decoded(button.dataset.id);
+    const details = state.conversationDetails.get(conversationId);
+    if (!details) return;
+    composeChat(`Tell me about this conversation resource: “${details.conversation.title}”.`, {
+      kind: 'omnideck-resource',
+      source_app: 'omnideck-projects',
+      resource: details.conversation,
+      conversation_details: details,
     });
-    showToast('Project context added to Omnideck chat');
+    showToast('Conversation resource added to Omnideck chat');
   } else if (action === 'scan-storage') {
     showLoading('Running a read-only storage scan…');
     state.storageReport = await invoke('get_storage_report', { refresh: true });
@@ -625,9 +778,6 @@ async function handleAction(button) {
     state.dashboard = null;
     await loadDashboard();
     showToast('Storage scan complete');
-  } else if (action === 'ask-cleanup') {
-    composeChat('Review this read-only Omnideck Projects storage report. Help me identify the safest, highest-value cleanup opportunities. Explain why each candidate may be safe or risky, account for artifact provenance, and do not delete or move anything unless I explicitly approve it.', state.storageReport);
-    showToast('Storage report added to Omnideck chat');
   }
 }
 
@@ -690,6 +840,8 @@ document.addEventListener('change', async (event) => {
   const filter = event.target.dataset.filter;
   if (filter === 'conversations-archive') state.filters.conversationsArchive = event.target.value;
   if (filter === 'conversations-assignment') state.filters.conversationsAssignment = event.target.value;
+  if (filter === 'conversations-artifacts') state.filters.conversationsArtifacts = event.target.value;
+  if (filter === 'conversations-sort') state.filters.conversationsSort = event.target.value;
   if (filter === 'artifacts-status') state.filters.artifactsStatus = event.target.value;
   if (filter === 'artifacts-assignment') state.filters.artifactsAssignment = event.target.value;
   if (filter) await renderRoute();
@@ -741,17 +893,6 @@ dom.refresh.addEventListener('click', async () => {
   } finally {
     dom.refresh.disabled = false;
   }
-});
-
-dom.ask.addEventListener('click', () => {
-  if (state.route.view === 'project' && state.currentProject) {
-    composeChat(projectPrompt(state.currentProject, state.currentProjectItems), state.currentProject);
-  } else if (state.route.view === 'storage' && state.storageReport) {
-    composeChat('Help me review this Omnideck Projects storage report and propose a careful, reversible cleanup plan. Do not delete or move anything without my explicit approval.', state.storageReport);
-  } else {
-    composeChat(`Help me organize the ${state.route.view} view in Omnideck Projects. Suggest a practical project structure and next steps without moving or deleting source content.`, { view: state.route.view });
-  }
-  showToast('Context added to Omnideck chat');
 });
 
 dom.search.addEventListener('input', () => {

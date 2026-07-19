@@ -85,8 +85,13 @@ export function typeLabel(type, plural = false) {
   return (labels[type] || ['Item', 'Items'])[plural ? 1 : 0];
 }
 
-export function typeGlyph(type) {
-  return { conversation: '◌', artifact: '◇', file: '▤', folder: '▱' }[type] || '·';
+export function typeIconClass(type) {
+  return {
+    conversation: 'bi-chat-left-text',
+    artifact: 'bi-collection',
+    file: 'bi-file-earmark',
+    folder: 'bi-folder',
+  }[type] || 'bi-circle';
 }
 
 export function fileUrl(path) {
@@ -95,15 +100,4 @@ export function fileUrl(path) {
     .split('/')
     .map((segment, index) => (index === 0 ? '' : encodeURIComponent(segment)))
     .join('/');
-}
-
-export function projectPrompt(project, items = []) {
-  const counts = items.reduce((result, item) => {
-    result[item.type] = (result[item.type] || 0) + 1;
-    return result;
-  }, {});
-  const summary = Object.entries(counts)
-    .map(([type, count]) => `${count} ${typeLabel(type, count !== 1).toLowerCase()}`)
-    .join(', ');
-  return `Help me review and organize my Omnideck project “${project.name}”.${summary ? ` It currently contains ${summary}.` : ''} Suggest a useful structure, identify anything that may be misplaced or missing, and propose next steps. Do not move or delete files unless I explicitly approve it.`;
 }
