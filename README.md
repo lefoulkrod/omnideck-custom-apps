@@ -1,14 +1,54 @@
 # Omnideck Custom Apps
 
-Personal Omnideck Custom Apps monorepo.
+Custom Apps for [Omnideck](https://github.com/omnideck-dev/omnideck). Each
+top-level directory is an independently installable app.
 
-Each app lives in its own top-level directory and is linked into Omnideck's
-`~/.omnideck/home/apps/` directory. For example, Code IDE is available at
-`~/omnideck-custom-apps/code-ide` and linked as:
+## Install with your Omnideck agent
 
-```text
-~/.omnideck/home/apps/code-ide -> ../omnideck-custom-apps/code-ide
+This is the recommended installation method for CLI deployments, which keep
+the virtual computer's home directory in a named volume. Ask your agent:
+
+> Clone https://github.com/lefoulkrod/omnideck-custom-apps into the persistent
+> Omnideck home directory. Install `code-ide` by linking or copying that
+> subfolder into the Custom Apps directory. Do not overwrite an existing app
+> or its `data/` directory.
+
+The agent can discover the configured Custom Apps directory and perform the
+installation from inside the virtual computer.
+
+## Install from a shell
+
+In the standard virtual computer, the persistent home is `/home/omnideck` and
+Custom Apps are stored in `/home/omnideck/apps`.
+
+Clone once and link the app so future `git pull` updates are immediately used:
+
+```bash
+cd /home/omnideck
+git clone https://github.com/lefoulkrod/omnideck-custom-apps.git
+ln -s ../omnideck-custom-apps/code-ide apps/code-ide
 ```
 
-The relative link also resolves inside the Omnideck container, where the home
-directory is mounted at `/home/omnideck`.
+Alternatively, copy only the app you want into the Custom Apps directory:
+
+```bash
+cd /home/omnideck
+git clone https://github.com/lefoulkrod/omnideck-custom-apps.git
+cp -a omnideck-custom-apps/code-ide /home/omnideck/apps/
+```
+
+Restart or refresh Omnideck if the newly installed app does not appear
+immediately. Runtime state belongs in each app's ignored `data/` directory.
+
+## Local bind-mount development
+
+Some development installations bind a host directory into
+`/home/omnideck`. In that case, keep the repository wherever is convenient and
+create a symlink that resolves *inside the container*. The exact host path is
+installation-specific; `~/.omnideck` is not assumed.
+
+For this checkout, the container-visible relative link is:
+
+```text
+/home/omnideck/apps/code-ide -> ../omnideck-custom-apps/code-ide
+```
