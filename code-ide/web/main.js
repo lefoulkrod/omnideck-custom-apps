@@ -19,6 +19,7 @@ import {
 // Tabs
 import {
   openFile as tabsOpenFile,
+  openDiff as tabsOpenDiff,
   closeTab as tabsCloseTab,
   doCloseTab as tabsDoCloseTab,
   activateTab as tabsActivateTab,
@@ -41,7 +42,7 @@ import {
 
 // Terminal
 import {
-  termState, updatePrompt,
+  termState, updatePrompt, setTerminalWorkspace,
   collapseTerminal, hideTerminal, showTerminal, toggleTerminal,
   maximizeTerminal, initTerminal,
 } from './terminal.js';
@@ -59,11 +60,12 @@ import {
 
 // Modals
 import {
-  openModal, closeModal, openConfirmDialog, closeConfirmDialog,
+  closeModal, openConfirmDialog, closeConfirmDialog,
   openNewFileModal, openNewFolderModal, openRenameModal, confirmDelete,
   initModals, setModalsDeps,
   triggerModalConfirm, triggerConfirmYes, triggerConfirmNo,
 } from './modals.js';
+import { initFolderPicker, openFolderPicker } from './folder-picker.js';
 
 // Keyboard
 import { initKeyboard } from './keyboard.js';
@@ -113,6 +115,9 @@ function doCloseTabBound(path) {
 function openFileBound(path, name) {
   return tabsOpenFile(path, name, renderTabsBound, activateTabBound, saveStateBound);
 }
+function openDiffBound(diff) {
+  tabsOpenDiff(diff, renderTabsBound, activateTabBound, saveStateBound);
+}
 
 // Editor: create bound version
 function renderEditorBound() {
@@ -136,15 +141,13 @@ function navigateToBound(path) {
 }
 function goHomeBound() {
   goHome(navigateToBound, updatePrompt, saveStateBound);
-  updatePrompt();
-  termState.cwd = state.homePath;
+  setTerminalWorkspace(state.homePath);
 }
 function openFolderAsRootBound(path) {
   if (path && path !== state.homePath) {
     state.recentRoots = [path, ...state.recentRoots.filter(root => root !== path)].slice(0, 10);
   }
-  termState.cwd = path;
-  updatePrompt();
+  setTerminalWorkspace(path);
   return openFolderAsRoot(path, updatePrompt, saveStateBound, goHomeBound);
 }
 function refreshTreeBound() {
@@ -210,6 +213,7 @@ function openInTerminalBound(path) {
 
 function askOmnideckBound(path = state.activeTab) {
   const tab = path ? state.openTabs.get(path) : null;
+  const contextPath = tab?.sourcePath || path;
   const selection = path === state.activeTab ? getEditorSelection() : '';
   if (!window.omnideck?.chat?.compose) {
     showToast('Omnideck chat bridge is unavailable', 'error');
@@ -217,10 +221,10 @@ function askOmnideckBound(path = state.activeTab) {
   }
   window.omnideck.chat.compose({
     text: selection
-      ? `Help me with this selection from ${path}:\n\n${selection}`
-      : `Help me review or improve ${path || 'the current workspace'}.`,
+      ? `Help me with this selection from ${contextPath}:\n\n${selection}`
+      : `Help me review or improve ${contextPath || 'the current workspace'}.`,
     context: {
-      path,
+      path: contextPath,
       language: tab?.lang || null,
       selection: selection || null,
       content: selection ? null : tab?.content?.slice(0, 20000) || null,
@@ -351,11 +355,12 @@ async function init() {
   );
   initContextMenu();
   initModals();
+  initFolderPicker();
   initTerminal(saveStateBound);
   initSearch(openFileBound, navigateToBound, refreshTreeBound);
   initTreeKeyboard();
   initSettings(renderEditorBound, saveStateBound);
-  initSourceControl(toggleSidebarBound);
+  initSourceControl(toggleSidebarBound, openDiffBound);
   initQuickOpen({
     openFile: openFileBound,
     openFolder: openFolderAsRootBound,
@@ -394,15 +399,13 @@ async function init() {
   });
   bindClick('btn-home', goHomeBound);
   bindClick('btn-open-folder', () => {
-    openModal('Open Folder', 'Folder path (from home):', 'apps/code-ide', 'Open', async (name) => {
-      if (!name) return;
-      const fullPath = name.startsWith('/') ? name : state.homePath + '/' + name;
-      const stat = await api('stat_file', { path: fullPath });
-      if (stat.error) { showToast(stat.error, 'error'); return; }
-      if (!stat.exists) { showToast('Path does not exist', 'error'); return; }
-      if (!stat.is_dir) { showToast('Not a folder', 'error'); return; }
-      openFolderAsRootBound(fullPath);
-      showToast(`Opened ${basename(fullPath)} as root`, 'success');
+    openFolderPicker(state.rootDir || state.homePath, async path => {
+      if (path === state.rootDir) {
+        showToast(`${basename(path)} is already the workspace`, 'info');
+        return;
+      }
+      await openFolderAsRootBound(path);
+      showToast(`Opened ${basename(path)} as workspace`, 'success');
     });
   });
 
@@ -431,8 +434,7 @@ async function init() {
   if (homeResult.home) {
     state.homePath = homeResult.home;
     state.rootDir = homeResult.home;
-    termState.cwd = homeResult.home;
-    updatePrompt();
+    setTerminalWorkspace(homeResult.home);
 
     // Restore saved state — but only UI state that the user hasn't already touched
     const saved = await loadState(api);
@@ -482,12 +484,17 @@ async function init() {
       // Restore terminal cwd
       if (saved.termCwd) {
         termState.cwd = saved.termCwd;
+        const terminal = termState.terminals.find(
+          candidate => candidate.id === termState.activeTerminalId,
+        );
+        if (terminal) terminal.cwd = saved.termCwd;
         updatePrompt();
       }
       // Restore workspace root
       if (saved.rootDir && saved.rootDir !== state.homePath) {
         state.rootDir = saved.rootDir;
         state.currentDir = saved.rootDir;
+        setTerminalWorkspace(saved.rootDir);
         renderBreadcrumb(saved.rootDir, goHomeBound, navigateToBound);
         dom.treeContainer.innerHTML = '<div class="loading"><div class="spinner"></div>Loading...</div>';
         await loadDir(saved.rootDir);

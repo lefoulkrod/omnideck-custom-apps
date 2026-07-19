@@ -57,4 +57,11 @@ export function initDom() {
   dom.quickResults = $('quick-results');
   dom.settingsOverlay = $('settings-overlay');
   dom.sourcePanel = dom.sourceView;
+  dom.folderPickerOverlay = $('folder-picker-overlay');
+  dom.folderPickerPath = $('folder-picker-path');
+  dom.folderPickerList = $('folder-picker-list');
+  dom.folderPickerUp = $('folder-picker-up');
+  dom.folderPickerHome = $('folder-picker-home');
+  dom.folderPickerCancel = $('folder-picker-cancel');
+  dom.folderPickerConfirm = $('folder-picker-confirm');
 }

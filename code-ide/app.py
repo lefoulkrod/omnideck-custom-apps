@@ -591,30 +591,67 @@ def run_command(command: str, cwd: str = "") -> dict:
         return {"error": f"Failed to run command: {e}"}
 
 
+def _git_repository_root(cwd: Path) -> Path:
+    proc = subprocess.run(
+        ['git', '-C', str(cwd), 'rev-parse', '--show-toplevel'],
+        capture_output=True, text=True, timeout=5,
+    )
+    if proc.returncode != 0:
+        raise ValueError(proc.stderr.strip() or "Not a Git repository")
+    return _safe_path(proc.stdout.strip())
+
+
+def _decode_git_content(content: bytes) -> str | None:
+    """Decode a Git blob for the editor, returning None for binary content."""
+    if b'\x00' in content:
+        return None
+    try:
+        return content.decode('utf-8')
+    except UnicodeDecodeError:
+        return None
+
+
 @action
 def git_status(path: str = "") -> dict:
-    """Return concise source-control status for the repository containing path."""
+    """Return concise, rename-safe source-control status for a repository."""
     try:
         cwd = _safe_path(path) if path else HOME
+        root = _git_repository_root(cwd)
         proc = subprocess.run(
-            ['git', '-C', str(cwd), 'status', '--porcelain=v1', '--branch'],
-            capture_output=True, text=True, timeout=10,
+            ['git', '-C', str(root), 'status', '--porcelain=v1', '--branch', '-z'],
+            capture_output=True, timeout=10,
         )
         if proc.returncode != 0:
-            return {"error": proc.stderr.strip() or "Not a Git repository"}
-        lines = proc.stdout.splitlines()
-        branch = lines[0][3:] if lines and lines[0].startswith('## ') else ''
+            message = proc.stderr.decode('utf-8', errors='replace').strip()
+            return {"error": message or "Not a Git repository"}
+
+        records = proc.stdout.decode('utf-8', errors='replace').split('\x00')
+        branch = ''
+        index = 0
+        if records and records[0].startswith('## '):
+            branch = records[0][3:]
+            index = 1
+
         files = []
-        for line in lines[1:]:
-            if len(line) < 4:
+        while index < len(records):
+            record = records[index]
+            index += 1
+            if len(record) < 4:
                 continue
-            files.append({"status": line[:2], "path": line[3:]})
-        root_proc = subprocess.run(
-            ['git', '-C', str(cwd), 'rev-parse', '--show-toplevel'],
-            capture_output=True, text=True, timeout=5,
-        )
+            status = record[:2]
+            file_path = record[3:]
+            original_path = ''
+            if 'R' in status or 'C' in status:
+                if index < len(records):
+                    original_path = records[index]
+                    index += 1
+            files.append({
+                "status": status,
+                "path": file_path,
+                "original_path": original_path,
+            })
         return {
-            "root": root_proc.stdout.strip() or str(cwd),
+            "root": str(root),
             "branch": branch,
             "files": files,
             "count": len(files),
@@ -624,21 +661,98 @@ def git_status(path: str = "") -> dict:
 
 
 @action
-def git_diff(path: str = "", file_path: str = "") -> dict:
-    """Return the working-tree diff for one repository or file."""
+def git_diff(
+    path: str = "", file_path: str = "", original_path: str = "",
+) -> dict:
+    """Return unified and editor-ready HEAD-to-working-tree diff data."""
     try:
         cwd = _safe_path(path) if path else HOME
-        command = ['git', '-C', str(cwd), 'diff', 'HEAD', '--']
+        root = _git_repository_root(cwd)
+        has_head = subprocess.run(
+            ['git', '-C', str(root), 'rev-parse', '--verify', 'HEAD'],
+            capture_output=True, timeout=5,
+        ).returncode == 0
+
+        target = None
+        target_relative = None
+        original_relative = None
         if file_path:
             target = _safe_path(file_path)
-            command.append(str(target))
-        proc = subprocess.run(command, capture_output=True, text=True, timeout=10)
-        if proc.returncode != 0:
-            return {"error": proc.stderr.strip() or "Could not read Git diff"}
-        diff = proc.stdout
-        if len(diff) > 500_000:
-            diff = diff[:500_000] + "\n... [diff truncated]"
-        return {"diff": diff}
+            try:
+                target_relative = target.relative_to(root)
+            except ValueError as exc:
+                raise PermissionError("Diff target is outside the Git repository") from exc
+            if original_path:
+                original_target = _safe_path(original_path)
+                try:
+                    original_relative = original_target.relative_to(root)
+                except ValueError as exc:
+                    raise PermissionError(
+                        "Original diff target is outside the Git repository"
+                    ) from exc
+            else:
+                original_relative = target_relative
+
+        diff = ''
+        if has_head:
+            command = ['git', '-C', str(root), 'diff', 'HEAD', '--']
+            if original_relative is not None and original_relative != target_relative:
+                command.append(original_relative.as_posix())
+            if target_relative is not None:
+                command.append(target_relative.as_posix())
+            proc = subprocess.run(
+                command, capture_output=True, text=True, errors='replace', timeout=10,
+            )
+            if proc.returncode != 0:
+                return {"error": proc.stderr.strip() or "Could not read Git diff"}
+            diff = proc.stdout
+            if len(diff) > 500_000:
+                diff = diff[:500_000] + "\n... [diff truncated]"
+
+        if target is None:
+            return {"diff": diff}
+
+        original_bytes = b''
+        if has_head and original_relative is not None:
+            original_proc = subprocess.run(
+                ['git', '-C', str(root), 'show', f'HEAD:{original_relative.as_posix()}'],
+                capture_output=True, timeout=10,
+            )
+            if original_proc.returncode == 0:
+                original_bytes = original_proc.stdout
+
+        modified_bytes = b''
+        modified_time = 0
+        if target.exists() and target.is_file():
+            if target.stat().st_size > MAX_TEXT_FILE_SIZE:
+                return {
+                    "diff": diff,
+                    "path": target_relative.as_posix(),
+                    "error": "File too large to display in the diff editor.",
+                }
+            modified_bytes = target.read_bytes()
+            modified_time = target.stat().st_mtime
+
+        if len(original_bytes) > MAX_TEXT_FILE_SIZE:
+            return {
+                "diff": diff,
+                "path": target_relative.as_posix(),
+                "error": "HEAD version is too large to display in the diff editor.",
+            }
+
+        original = _decode_git_content(original_bytes)
+        modified = _decode_git_content(modified_bytes)
+        binary = original is None or modified is None
+        return {
+            "diff": diff,
+            "path": target_relative.as_posix(),
+            "original_path": original_relative.as_posix(),
+            "original": '' if binary else original,
+            "modified": '' if binary else modified,
+            "modified_time": modified_time,
+            "binary": binary,
+            "deleted": not target.exists(),
+        }
     except Exception as e:
         return {"error": f"Git diff failed: {e}"}
 

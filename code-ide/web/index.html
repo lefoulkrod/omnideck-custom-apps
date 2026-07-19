@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Code IDE</title>
+  <link rel="stylesheet" href="codemirror/addon/merge/merge.css">
   <link rel="stylesheet" href="app.css">
   <link rel="stylesheet" href="fonts/bootstrap-icons.css">
   <!-- CodeMirror -->
@@ -46,7 +47,7 @@
       <div class="sidebar-header">
         <span id="workspace-name">Explorer</span>
         <div class="sidebar-actions">
-          <button class="icon-btn" id="btn-open-folder" title="Open Folder as Root"><i class="bi bi-folder-symlink"></i></button>
+          <button class="icon-btn" id="btn-open-folder" title="Open Folder as Workspace"><i class="bi bi-folder-symlink"></i></button>
           <button class="icon-btn" id="btn-home" title="Home"><i class="bi bi-house-door"></i></button>
           <button class="icon-btn" id="btn-refresh" title="Refresh"><i class="bi bi-arrow-clockwise"></i></button>
           <button class="icon-btn" id="btn-collapse-all" title="Collapse All Folders"><i class="bi bi-arrows-collapse"></i></button>
@@ -177,6 +178,24 @@
   </div>
 </div>
 
+<!-- Workspace Folder Picker -->
+<div class="modal-overlay" id="folder-picker-overlay">
+  <div class="modal folder-picker-modal" role="dialog" aria-modal="true" aria-labelledby="folder-picker-title">
+    <div class="modal-header" id="folder-picker-title">Open Folder as Workspace</div>
+    <div class="folder-picker-toolbar">
+      <button class="icon-btn" id="folder-picker-up" title="Parent Folder" aria-label="Parent Folder"><i class="bi bi-arrow-up"></i></button>
+      <button class="icon-btn" id="folder-picker-home" title="Home Folder" aria-label="Home Folder"><i class="bi bi-house-door"></i></button>
+      <span id="folder-picker-path" class="folder-picker-path">~</span>
+    </div>
+    <div class="folder-picker-hint">Choose this folder, or browse into a subfolder.</div>
+    <div id="folder-picker-list" class="folder-picker-list"></div>
+    <div class="modal-footer">
+      <button class="btn" id="folder-picker-cancel">Cancel</button>
+      <button class="btn btn-primary" id="folder-picker-confirm">Open Folder</button>
+    </div>
+  </div>
+</div>
+
 <!-- Context Menu -->
 <div class="context-menu" id="context-menu"></div>
 
@@ -248,6 +267,8 @@
 <script src="codemirror/addon/search/search.js"></script>
 <script src="codemirror/addon/search/match-highlighter.js"></script>
 <script src="codemirror/addon/dialog/dialog.js"></script>
+<script src="vendor/diff-match-patch.js"></script>
+<script src="codemirror/addon/merge/merge.js"></script>
 <!-- App -->
 <script type="module" src="main.js"></script>
 </body>

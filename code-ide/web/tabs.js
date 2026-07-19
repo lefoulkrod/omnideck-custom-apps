@@ -201,3 +201,29 @@ export async function openFile(path, name, renderTabsFn, activateTabFn, saveStat
   if (requestToken === state.openRequestToken) activateTabFn(path);
   saveStateFn();
 }
+
+export function openDiff(diff, renderTabsFn, activateTabFn, saveStateFn) {
+  const id = `git-diff:${encodeURIComponent(diff.repositoryRoot)}:${encodeURIComponent(diff.path)}`;
+  const fi = getFileIcon(diff.path);
+  state.openTabs.set(id, {
+    name: `${diff.name} (Working Tree)`,
+    content: diff.modified,
+    originalContent: diff.modified,
+    baseContent: diff.original,
+    unifiedDiff: diff.unifiedDiff || '',
+    dirty: false,
+    stale: false,
+    lang: fi.lang,
+    icon: 'bi-file-diff',
+    iconCls: fi.cls,
+    isDiff: true,
+    sourcePath: diff.sourcePath,
+    repositoryRoot: diff.repositoryRoot,
+    relativePath: diff.path,
+    status: diff.status,
+    deleted: diff.deleted,
+  });
+  renderTabsFn();
+  activateTabFn(id);
+  saveStateFn();
+}

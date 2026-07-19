@@ -1,14 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { dom, initDom } from '../../web/dom.js';
-import { collapseTerminal, termState } from '../../web/terminal.js';
+import {
+  collapseTerminal, createTerminal, setTerminalWorkspace, termState,
+} from '../../web/terminal.js';
 
 describe('terminal panel state', () => {
   beforeEach(() => {
     document.body.innerHTML = `
       <div class="editor-area">
         <div id="terminal-panel" style="height: 280px">
-          <div class="terminal-header"><button id="term-collapse"><i></i></button></div>
+          <div class="terminal-header">
+            <div class="terminal-tabs"></div>
+            <button id="term-collapse"><i></i></button>
+          </div>
           <div id="terminal-body"></div>
           <div id="terminal-output"></div>
           <input id="terminal-input">
@@ -18,6 +23,13 @@ describe('terminal panel state', () => {
     `;
     initDom();
     termState.savedHeight = null;
+    termState.cwd = '';
+    termState.workspaceCwd = '';
+    termState.nextId = 2;
+    termState.activeTerminalId = 1;
+    termState.terminals = [
+      { id: 1, name: 'Terminal 1', cwd: '', history: [], historyIndex: -1, output: '' },
+    ];
   });
 
   it('collapses to a strip and restores the previous height', () => {
@@ -36,5 +48,16 @@ describe('terminal panel state', () => {
     expect(dom.terminalPanel.style.height).toBe('280px');
     expect(dom.termCollapse.querySelector('i').className).toBe('bi bi-chevron-down');
     expect(saveState).toHaveBeenCalledTimes(2);
+  });
+
+  it('starts new terminals at the selected workspace root', () => {
+    setTerminalWorkspace('/home/me/project');
+    termState.cwd = '/home/me/project/packages/app';
+
+    createTerminal();
+
+    expect(termState.terminals).toHaveLength(2);
+    expect(termState.terminals[1].cwd).toBe('/home/me/project');
+    expect(termState.cwd).toBe('/home/me/project');
   });
 });

@@ -77,6 +77,92 @@ export function bindEditorContextMenu(cm, showContextMenuFn) {
   });
 }
 
+function diffNavButton(icon, title, command, cm) {
+  const button = document.createElement('button');
+  button.className = 'icon-btn';
+  button.title = title;
+  button.setAttribute('aria-label', title);
+  button.innerHTML = `<i class="bi ${icon}"></i>`;
+  button.onclick = () => {
+    cm.execCommand(command);
+    cm.focus();
+  };
+  return button;
+}
+
+function renderDiffEditor(tab, showContextMenuFn) {
+  const container = document.createElement('div');
+  container.className = 'diff-editor';
+
+  const toolbar = document.createElement('div');
+  toolbar.className = 'diff-editor-toolbar';
+  const path = document.createElement('span');
+  path.className = 'diff-editor-path';
+  path.innerHTML = '<i class="bi bi-file-diff"></i>';
+  path.appendChild(document.createTextNode(` ${tab.relativePath}`));
+  const status = document.createElement('span');
+  status.className = 'diff-editor-status';
+  status.textContent = tab.deleted ? 'Deleted' : tab.status === '??' ? 'Untracked' : 'Working Tree';
+  const actions = document.createElement('div');
+  actions.className = 'diff-editor-actions';
+  toolbar.append(path, status, actions);
+
+  const labels = document.createElement('div');
+  labels.className = 'diff-editor-labels';
+  const originalLabel = document.createElement('span');
+  originalLabel.textContent = tab.status === '??' ? 'HEAD · Empty file' : 'HEAD';
+  const spacer = document.createElement('span');
+  const modifiedLabel = document.createElement('span');
+  modifiedLabel.textContent = tab.deleted ? 'Working Tree · Deleted' : 'Working Tree';
+  labels.append(originalLabel, spacer, modifiedLabel);
+
+  const host = document.createElement('div');
+  host.className = 'diff-editor-host';
+  container.append(toolbar, labels, host);
+  dom.editorContent.appendChild(container);
+
+  if (!globalThis.CodeMirror?.MergeView) {
+    const fallback = document.createElement('pre');
+    fallback.className = 'source-diff';
+    fallback.textContent = tab.unifiedDiff || 'No textual changes to display.';
+    host.appendChild(fallback);
+    return;
+  }
+
+  const merge = globalThis.CodeMirror.MergeView(host, {
+    value: tab.content,
+    origLeft: tab.baseContent,
+    mode: getCMMode(tab.relativePath),
+    theme: 'vscode-dark',
+    lineNumbers: true,
+    lineWrapping: state.settings.wordWrap,
+    readOnly: true,
+    revertButtons: false,
+    connect: 'align',
+    collapseIdentical: false,
+    highlightDifferences: true,
+  });
+  const cm = merge.editor();
+  state.cm = cm;
+  state.cmPath = state.activeTab;
+  state.mergeView = merge;
+  tab.doc = cm.getDoc();
+  container.style.fontSize = `${state.settings.fontSize}px`;
+  bindEditorContextMenu(cm, showContextMenuFn);
+
+  actions.append(
+    diffNavButton('bi-arrow-up', 'Previous Change', 'goPrevDiff', cm),
+    diffNavButton('bi-arrow-down', 'Next Change', 'goNextDiff', cm),
+  );
+  if (tab.cursor) cm.setCursor(tab.cursor);
+  if (tab.scroll) cm.scrollTo(tab.scroll.left || 0, tab.scroll.top || 0);
+  requestAnimationFrame(() => {
+    cm.refresh();
+    merge.leftOriginal()?.refresh();
+  });
+  cm.focus();
+}
+
 export function renderEditor(
   saveCurrentFileFn, closeTabFn, reloadFileFn, updateStatusFn,
   renderTabsFn, saveStateFn, showContextMenuFn,
@@ -88,6 +174,7 @@ export function renderEditor(
   }
   state.cm = null;
   state.cmPath = null;
+  state.mergeView = null;
   dom.editorContent.innerHTML = '';
 
   if (!state.activeTab) {
@@ -111,6 +198,11 @@ export function renderEditor(
 
   const tab = state.openTabs.get(state.activeTab);
   if (!tab) return;
+
+  if (tab.isDiff) {
+    renderDiffEditor(tab, showContextMenuFn);
+    return;
+  }
 
   // Stale banner (shown when file changed or deleted on disk)
   if (tab.stale) {

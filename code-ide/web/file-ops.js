@@ -28,12 +28,15 @@ export function updateStatus() {
   }
   const tab = state.openTabs.get(state.activeTab);
   if (!tab) return;
-  if (saveButton) saveButton.disabled = Boolean(tab.isPreview);
+  if (saveButton) saveButton.disabled = Boolean(tab.isPreview || tab.isDiff);
   const lines = tab.content.split('\n').length;
   dom.statusPath.replaceChildren();
   const icon = document.createElement('i');
   icon.className = 'bi bi-file-earmark';
-  dom.statusPath.append(icon, document.createTextNode(` ${relativePath(state.activeTab)}`));
+  dom.statusPath.append(
+    icon,
+    document.createTextNode(` ${relativePath(tab.sourcePath || state.activeTab)}`),
+  );
   dom.statusLines.textContent = `${lines} lines`;
   dom.statusLang.textContent = tab.lang;
   if (tab.stale === 'deleted') {
@@ -43,7 +46,7 @@ export function updateStatus() {
   } else if (tab.dirty) {
     setSaveStatus('● Unsaved', 'unsaved');
   } else {
-    setSaveStatus(tab.isPreview ? 'Preview' : '✓ Saved', 'saved');
+    setSaveStatus(tab.isDiff ? 'Git diff' : tab.isPreview ? 'Preview' : '✓ Saved', 'saved');
   }
 }
 
@@ -54,8 +57,8 @@ export async function saveCurrentFile(renderTabsFn, renderEditorFn, path = state
   }
   const tab = state.openTabs.get(path);
   if (!tab) return;
-  if (tab.isPreview) {
-    showToast('Preview files are read-only', 'info');
+  if (tab.isPreview || tab.isDiff) {
+    showToast(tab.isDiff ? 'Diff editors are read-only' : 'Preview files are read-only', 'info');
     return;
   }
 
@@ -116,7 +119,10 @@ export async function reloadFile(path, renderTabsFn, renderEditorFn) {
 export async function pollDiskChanges(renderEditorFn, renderTabsFn) {
   if (state.openTabs.size === 0) return;
 
-  const paths = [...state.openTabs.keys()];
+  const paths = [...state.openTabs.entries()]
+    .filter(([, tab]) => !tab.isDiff)
+    .map(([path]) => path);
+  if (!paths.length) return;
   const batch = await api('stat_files', { paths });
   if (batch.error) return;
   for (const path of paths) {

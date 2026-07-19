@@ -56,7 +56,7 @@ export function showContextMenu(x, y, item) {
   if (!isTab) {
     if (isDir) {
       items.push({ icon: 'bi-folder2-open', label: 'Open Folder', action: () => ctxDeps.navigateTo(item.path) });
-      items.push({ icon: 'bi-collection', label: 'Open as Root', action: () => ctxDeps.openFolderAsRoot(item.path) });
+      items.push({ icon: 'bi-collection', label: 'Open as Workspace', action: () => ctxDeps.openFolderAsRoot(item.path) });
       items.push({ sep: true });
       items.push({ icon: 'bi-file-earmark-plus', label: 'New File', action: () => ctxDeps.openNewFileModal(item.path) });
       items.push({ icon: 'bi-folder-plus', label: 'New Folder', action: () => ctxDeps.openNewFolderModal(item.path) });
@@ -73,6 +73,7 @@ export function showContextMenu(x, y, item) {
     }
   } else {
     const tab = state.openTabs.get(item.path);
+    const sourcePath = tab?.sourcePath || item.path;
     items.push({ icon: 'bi-pin-angle', label: tab?.pinned ? 'Unpin Tab' : 'Pin Tab', action: () => ctxDeps.togglePinTab(item.path) });
     items.push({ sep: true });
     items.push({ icon: 'bi-file-earmark', label: 'Close Tab', action: () => ctxDeps.closeTab(item.path) });
@@ -80,7 +81,7 @@ export function showContextMenu(x, y, item) {
     items.push({ icon: 'bi-layout-sidebar-inset-reverse', label: 'Close to the Right', action: () => ctxDeps.closeTabsToRight(item.path) });
     items.push({ icon: 'bi-x-square', label: 'Close All', action: () => ctxDeps.closeAllTabs() });
     items.push({ sep: true });
-    items.push({ icon: 'bi-folder-symlink', label: 'Reveal in Explorer', action: () => ctxDeps.revealPath(item.path) });
+    items.push({ icon: 'bi-folder-symlink', label: 'Reveal in Explorer', action: () => ctxDeps.revealPath(sourcePath) });
     items.push({ icon: 'bi-chat-left-text', label: 'Ask Omnideck About File', action: () => ctxDeps.askOmnideck(item.path) });
   }
 
@@ -94,23 +95,25 @@ export function showContextMenu(x, y, item) {
 export function showEditorContextMenu(x, y) {
   const cm = state.cm;
   if (!cm || !state.activeTab) return;
+  const tab = state.openTabs.get(state.activeTab);
+  const readOnly = Boolean(tab?.isDiff);
   const hasSelection = Boolean(cm.getSelection());
   const history = cm.getDoc().historySize?.() || { undo: 0, redo: 0 };
   renderContextMenu(x, y, [
-    { icon: 'bi-arrow-counterclockwise', label: 'Undo', shortcut: 'Ctrl+Z', disabled: !history.undo, action: () => cm.undo() },
-    { icon: 'bi-arrow-clockwise', label: 'Redo', shortcut: 'Ctrl+Y', disabled: !history.redo, action: () => cm.redo() },
+    { icon: 'bi-arrow-counterclockwise', label: 'Undo', shortcut: 'Ctrl+Z', disabled: readOnly || !history.undo, action: () => cm.undo() },
+    { icon: 'bi-arrow-clockwise', label: 'Redo', shortcut: 'Ctrl+Y', disabled: readOnly || !history.redo, action: () => cm.redo() },
     { sep: true },
-    { icon: 'bi-scissors', label: 'Cut', shortcut: 'Ctrl+X', disabled: !hasSelection, action: ctxDeps.editorCut },
+    { icon: 'bi-scissors', label: 'Cut', shortcut: 'Ctrl+X', disabled: readOnly || !hasSelection, action: ctxDeps.editorCut },
     { icon: 'bi-clipboard', label: 'Copy', shortcut: 'Ctrl+C', disabled: !hasSelection, action: ctxDeps.editorCopy },
-    { icon: 'bi-clipboard-plus', label: 'Paste', shortcut: 'Ctrl+V', action: ctxDeps.editorPaste },
+    { icon: 'bi-clipboard-plus', label: 'Paste', shortcut: 'Ctrl+V', disabled: readOnly, action: ctxDeps.editorPaste },
     { icon: 'bi-textarea-t', label: 'Select All', shortcut: 'Ctrl+A', action: () => cm.execCommand('selectAll') },
     { sep: true },
     { icon: 'bi-terminal', label: 'Command Palette…', shortcut: 'Ctrl+Shift+P', action: ctxDeps.openCommandPalette },
-    { icon: 'bi-braces', label: 'Format Document', shortcut: 'Shift+Alt+F', action: ctxDeps.formatDocument },
-    { icon: 'bi-save', label: 'Save', shortcut: 'Ctrl+S', action: ctxDeps.saveFile },
+    { icon: 'bi-braces', label: 'Format Document', shortcut: 'Shift+Alt+F', disabled: readOnly, action: ctxDeps.formatDocument },
+    { icon: 'bi-save', label: 'Save', shortcut: 'Ctrl+S', disabled: readOnly, action: ctxDeps.saveFile },
     { sep: true },
     { icon: 'bi-chat-left-text', label: hasSelection ? 'Ask Omnideck About Selection' : 'Ask Omnideck About File', shortcut: 'Ctrl+Shift+A', action: ctxDeps.askOmnideck },
-    { icon: 'bi-folder-symlink', label: 'Reveal in Explorer', action: () => ctxDeps.revealPath(state.activeTab) },
+    { icon: 'bi-folder-symlink', label: 'Reveal in Explorer', action: () => ctxDeps.revealPath(tab?.sourcePath || state.activeTab) },
   ]);
 }
 

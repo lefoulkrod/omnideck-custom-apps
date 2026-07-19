@@ -12,6 +12,7 @@ export const termState = {
   savedHeight: null,
   nextId: 2,
   activeTerminalId: 1,
+  workspaceCwd: '',
   terminals: [{ id: 1, name: 'Terminal 1', cwd: '', history: [], historyIndex: -1, output: '' }],
 };
 
@@ -58,11 +59,20 @@ export function switchTerminal(id) {
   dom.terminalInput.focus();
 }
 
+export function setTerminalWorkspace(path) {
+  const cwd = path || '';
+  termState.workspaceCwd = cwd;
+  termState.cwd = cwd;
+  for (const terminal of termState.terminals) terminal.cwd = cwd;
+  if (dom.terminalPrompt) updatePrompt();
+}
+
 export function createTerminal() {
   saveActiveTerminal();
   const id = termState.nextId++;
+  const cwd = termState.workspaceCwd || termState.cwd;
   termState.terminals.push({
-    id, name: `Terminal ${id}`, cwd: termState.cwd,
+    id, name: `Terminal ${id}`, cwd,
     history: [], historyIndex: -1, output: '',
   });
   switchTerminal(id);

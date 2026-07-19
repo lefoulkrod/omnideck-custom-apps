@@ -2,9 +2,10 @@
 
 import { state } from './state.js';
 import { $ } from './dom.js';
-import { api } from './api.js';
+import { api, showToast } from './api.js';
 
 let repositoryRoot = '';
+let openDiff = null;
 
 function fullPath(relative) {
   return repositoryRoot.replace(/\/$/, '') + '/' + relative.replace(/^\//, '');
@@ -12,22 +13,50 @@ function fullPath(relative) {
 
 async function showDiff(file) {
   const target = fullPath(file.path);
-  const result = await api('git_diff', { path: repositoryRoot, file_path: target });
-  let diff = result.diff || '';
-  if (!diff && file.status.includes('?')) {
-    const read = await api('read_file', { path: target });
-    if (!read.error) diff = `Untracked file: ${file.path}\n\n${read.content}`;
+  const originalTarget = file.original_path ? fullPath(file.original_path) : '';
+  const result = await api('git_diff', {
+    path: repositoryRoot,
+    file_path: target,
+    original_path: originalTarget,
+  });
+  if (result.error) {
+    showToast(result.error, 'error');
+    return;
   }
-  const files = $('source-files');
-  files.innerHTML = '';
-  const back = document.createElement('button');
-  back.className = 'btn source-back';
-  back.textContent = '← Changes';
-  back.onclick = refreshSourceControl;
-  const pre = document.createElement('pre');
-  pre.className = 'source-diff';
-  pre.textContent = diff || 'No unstaged diff for this file.';
-  files.append(back, pre);
+  if (result.binary) {
+    showToast('Binary files cannot be shown in the diff editor', 'info');
+    return;
+  }
+  if (!openDiff) return;
+  openDiff({
+    name: file.path.split('/').pop(),
+    path: result.path || file.path,
+    sourcePath: target,
+    repositoryRoot,
+    status: file.status,
+    original: result.original || '',
+    modified: result.modified || '',
+    unifiedDiff: result.diff || '',
+    deleted: Boolean(result.deleted),
+  });
+}
+
+function describeStatus(status) {
+  if (status === '??') return 'Untracked';
+  if (status.includes('R')) return 'Renamed';
+  if (status.includes('D')) return 'Deleted';
+  if (status.includes('A')) return 'Added';
+  if (status.includes('M')) return 'Modified';
+  return 'Changed';
+}
+
+function statusBadge(status) {
+  if (status === '??') return 'U';
+  if (status.includes('R')) return 'R';
+  if (status.includes('D')) return 'D';
+  if (status.includes('A')) return 'A';
+  if (status.includes('M')) return 'M';
+  return 'C';
 }
 
 export async function refreshSourceControl() {
@@ -48,21 +77,37 @@ export async function refreshSourceControl() {
     container.appendChild(clean);
     return;
   }
+  const group = document.createElement('div');
+  group.className = 'source-group-title';
+  group.textContent = `Changes ${result.count}`;
+  container.appendChild(group);
   for (const file of result.files) {
     const row = document.createElement('button');
     row.className = 'source-file';
     const status = document.createElement('span');
     status.className = 'source-status';
-    status.textContent = file.status.trim() || 'M';
+    status.textContent = statusBadge(file.status);
+    status.dataset.status = status.textContent;
+    status.title = describeStatus(file.status);
+    const details = document.createElement('span');
+    details.className = 'source-file-details';
     const name = document.createElement('span');
-    name.textContent = file.path;
-    row.append(status, name);
+    name.className = 'source-file-name';
+    name.textContent = file.path.split('/').pop();
+    const parent = document.createElement('span');
+    parent.className = 'source-file-parent';
+    parent.textContent = file.path.includes('/')
+      ? file.path.substring(0, file.path.lastIndexOf('/')) : '';
+    details.append(name, parent);
+    row.append(status, details);
+    row.title = `${describeStatus(file.status)} · Open Changes`;
     row.onclick = () => showDiff(file);
     container.appendChild(row);
   }
 }
 
-export function initSourceControl(closeSidebar) {
+export function initSourceControl(closeSidebar, openDiffFn) {
+  openDiff = openDiffFn;
   $('source-refresh').addEventListener('click', refreshSourceControl);
   $('source-close').addEventListener('click', closeSidebar);
 }

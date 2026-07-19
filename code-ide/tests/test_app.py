@@ -1,6 +1,7 @@
 import importlib
 import importlib.util
 from pathlib import Path
+import subprocess
 import sys
 from types import ModuleType
 
@@ -177,6 +178,85 @@ def test_terminal_cd_returns_new_working_directory(isolated_home: Path) -> None:
 
     assert result["exit_code"] == 0
     assert result["cwd"] == str(child)
+
+
+def test_git_diff_returns_editor_versions_and_space_safe_status(
+    isolated_home: Path,
+) -> None:
+    repository = isolated_home / "project"
+    repository.mkdir()
+    subprocess.run(['git', 'init', '-q', str(repository)], check=True)
+    subprocess.run(
+        ['git', '-C', str(repository), 'config', 'user.email', 'tests@example.com'],
+        check=True,
+    )
+    subprocess.run(
+        ['git', '-C', str(repository), 'config', 'user.name', 'Tests'], check=True,
+    )
+    tracked = repository / "example.py"
+    tracked.write_text("print('old')\n", encoding="utf-8")
+    subprocess.run(['git', '-C', str(repository), 'add', 'example.py'], check=True)
+    subprocess.run(
+        ['git', '-C', str(repository), 'commit', '-qm', 'initial'], check=True,
+    )
+
+    tracked.write_text("print('new')\n", encoding="utf-8")
+    (repository / "new file.txt").write_text("untracked\n", encoding="utf-8")
+
+    status = app.git_status(str(repository))
+    files = {item["path"]: item for item in status["files"]}
+    assert files["example.py"]["status"] == " M"
+    assert files["new file.txt"]["status"] == "??"
+
+    result = app.git_diff(str(repository), str(tracked))
+    assert result["original"] == "print('old')\n"
+    assert result["modified"] == "print('new')\n"
+    assert result["path"] == "example.py"
+    assert result["binary"] is False
+    assert "-print('old')" in result["diff"]
+    assert "+print('new')" in result["diff"]
+
+    untracked = app.git_diff(str(repository), str(repository / "new file.txt"))
+    assert untracked["original"] == ""
+    assert untracked["modified"] == "untracked\n"
+
+    tracked.unlink()
+    deleted = app.git_diff(str(repository), str(tracked))
+    assert deleted["original"] == "print('old')\n"
+    assert deleted["modified"] == ""
+    assert deleted["deleted"] is True
+
+
+def test_git_status_and_diff_preserve_rename_paths(isolated_home: Path) -> None:
+    repository = isolated_home / "rename-project"
+    repository.mkdir()
+    subprocess.run(['git', 'init', '-q', str(repository)], check=True)
+    subprocess.run(
+        ['git', '-C', str(repository), 'config', 'user.email', 'tests@example.com'],
+        check=True,
+    )
+    subprocess.run(
+        ['git', '-C', str(repository), 'config', 'user.name', 'Tests'], check=True,
+    )
+    original = repository / "before.js"
+    renamed = repository / "after.js"
+    original.write_text("export const value = 1;\n", encoding="utf-8")
+    subprocess.run(['git', '-C', str(repository), 'add', 'before.js'], check=True)
+    subprocess.run(
+        ['git', '-C', str(repository), 'commit', '-qm', 'initial'], check=True,
+    )
+    subprocess.run(
+        ['git', '-C', str(repository), 'mv', 'before.js', 'after.js'], check=True,
+    )
+
+    status = app.git_status(str(repository))
+    assert status["files"] == [{
+        "status": "R ", "path": "after.js", "original_path": "before.js",
+    }]
+    result = app.git_diff(str(repository), str(renamed), str(original))
+    assert result["path"] == "after.js"
+    assert result["original_path"] == "before.js"
+    assert result["original"] == result["modified"] == "export const value = 1;\n"
 
 
 def test_stat_files_batches_open_tab_metadata(isolated_home: Path) -> None:

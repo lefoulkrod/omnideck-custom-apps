@@ -23,5 +23,11 @@ describe('state serialization', () => {
     state.openTabs.set('/image.png', { name: 'image.png', content: '', dirty: true, isPreview: true });
     expect(hasDirtyTabs()).toBe(false);
   });
-});
 
+  it('does not persist generated Git diff editors', () => {
+    state.openTabs.set('git-diff:example', {
+      name: 'example.js (Working Tree)', content: 'changed', dirty: false, isDiff: true,
+    });
+    expect(serializeTabs()).toEqual([]);
+  });
+});

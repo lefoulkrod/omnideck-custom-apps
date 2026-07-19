@@ -15,6 +15,7 @@ export const state = {
   pollTimer: null,
   cm: null,
   cmPath: null,
+  mergeView: null,
   initDone: false,
   userInteracted: false,
   openRequestToken: 0,
@@ -36,11 +37,13 @@ export const STORAGE_KEY = 'omnideck-code-ide-state';
 let saveTimer = null;
 
 export function hasDirtyTabs() {
-  return [...state.openTabs.values()].some(tab => tab.dirty && !tab.isPreview);
+  return [...state.openTabs.values()].some(
+    tab => tab.dirty && !tab.isPreview && !tab.isDiff,
+  );
 }
 
 export function serializeTabs() {
-  return [...state.openTabs.entries()].map(([path, tab]) => ({
+  return [...state.openTabs.entries()].filter(([, tab]) => !tab.isDiff).map(([path, tab]) => ({
     path,
     name: tab.name,
     dirty: Boolean(tab.dirty),

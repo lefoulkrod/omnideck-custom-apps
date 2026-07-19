@@ -1,9 +1,11 @@
 # Code IDE Custom App
 
 A VS Code-inspired editor for Omnideck Custom Apps. It provides a recursive
-Explorer, recoverable editor tabs, file/content search and replace, previews,
-Git status/diffs, formatter commands, configurable editing, and terminal
-sessions backed by `app.py` actions.
+Explorer, workspace folder picker, recoverable editor tabs, file/content search
+and replace, previews, Git status with side-by-side editor diffs, formatter
+commands, configurable editing, and terminal sessions backed by `app.py`
+actions. New terminals start at the selected workspace root, while `cd` remains
+local to the active terminal.
 
 ## Shortcuts
 

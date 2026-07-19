@@ -1,8 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { dom } from '../../web/dom.js';
 import { state } from '../../web/state.js';
-import { bindEditorContextMenu, getCMMode, getIndentSettings } from '../../web/editor.js';
+import {
+  bindEditorContextMenu, getCMMode, getIndentSettings, renderEditor,
+} from '../../web/editor.js';
 import { saveCurrentFile } from '../../web/file-ops.js';
 import { renderPreview } from '../../web/preview.js';
 import { setContextMenuDeps, showEditorContextMenu } from '../../web/context-menu.js';
@@ -17,11 +19,18 @@ describe('editor and preview safety', () => {
     dom.statusLines = document.createElement('div');
     dom.statusLang = document.createElement('div');
     state.openTabs = new Map();
+    state.cm = null;
+    state.cmPath = null;
+    state.mergeView = null;
     state.settings = {
       tabSize: 2, insertSpaces: true, wordWrap: false, fontSize: 14,
       autoSave: false, autoSaveDelay: 1000, languageIndentation: true,
     };
     window.omnideck = { invoke: vi.fn() };
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('never invokes write_file for a binary preview', async () => {
@@ -108,5 +117,45 @@ describe('editor and preview safety', () => {
     [...dom.contextMenu.querySelectorAll('.context-menu-item')]
       .find(item => item.textContent.includes('Ask Omnideck')).click();
     expect(askOmnideck).toHaveBeenCalled();
+  });
+
+  it('renders Git changes with the CodeMirror merge editor', () => {
+    dom.editorContent = document.createElement('div');
+    document.body.appendChild(dom.editorContent);
+    const editorWrapper = document.createElement('div');
+    const cm = {
+      getDoc: () => ({}),
+      getWrapperElement: () => editorWrapper,
+      execCommand: vi.fn(),
+      focus: vi.fn(),
+      refresh: vi.fn(),
+      setCursor: vi.fn(),
+      scrollTo: vi.fn(),
+    };
+    const original = { refresh: vi.fn() };
+    const merge = { editor: () => cm, leftOriginal: () => original };
+    const MergeView = vi.fn(() => merge);
+    vi.stubGlobal('CodeMirror', { MergeView });
+    vi.stubGlobal('requestAnimationFrame', callback => { callback(); return 1; });
+    state.activeTab = 'git-diff:app';
+    state.openTabs.set(state.activeTab, {
+      name: 'app.js (Working Tree)', relativePath: 'src/app.js',
+      sourcePath: '/home/me/project/src/app.js', content: 'const n = 2;\n',
+      baseContent: 'const n = 1;\n', unifiedDiff: '@@ -1 +1 @@',
+      status: ' M', deleted: false, isDiff: true,
+    });
+
+    renderEditor(
+      vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(),
+    );
+
+    expect(MergeView).toHaveBeenCalledWith(expect.any(HTMLElement), expect.objectContaining({
+      value: 'const n = 2;\n', origLeft: 'const n = 1;\n',
+      mode: 'javascript', readOnly: true, connect: 'align',
+    }));
+    expect(dom.editorContent.querySelector('.diff-editor')).toBeTruthy();
+    expect(state.cm).toBe(cm);
+    dom.editorContent.querySelector('[title="Next Change"]').click();
+    expect(cm.execCommand).toHaveBeenCalledWith('goNextDiff');
   });
 });
