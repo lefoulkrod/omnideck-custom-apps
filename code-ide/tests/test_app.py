@@ -81,9 +81,14 @@ def test_safe_path_rejects_outside_home_and_symlink(isolated_home: Path, tmp_pat
 
 
 def test_atomic_write_detects_disk_conflict(isolated_home: Path) -> None:
+    import time
+
     target = isolated_home / "example.txt"
     target.write_text("one", encoding="utf-8")
     original_mtime = target.stat().st_mtime
+    # Ensure the mtime tick advances so the conflict is detectable even on
+    # filesystems with coarse timestamp resolution (e.g. ext4 at 1 s).
+    time.sleep(0.01)
     target.write_text("external", encoding="utf-8")
 
     result = app.write_file(str(target), "editor", expected_modified=original_mtime)
