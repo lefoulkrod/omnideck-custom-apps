@@ -1,0 +1,1128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conversation Knowledge Base</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+    <style>
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --surface-hover: #1c2128;
+            --border: #30363d;
+            --text: #e6edf3;
+            --text-muted: #8b949e;
+            --accent: #58a6ff;
+            --accent-hover: #79b8ff;
+            --success: #3fb950;
+            --warning: #d29922;
+            --danger: #f85149;
+            --radius: 8px;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 24px 16px;
+        }
+
+        /* Header */
+        header {
+            margin-bottom: 24px;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        h1 i { color: var(--accent); }
+
+        .subtitle {
+            color: var(--text-muted);
+            font-size: 0.875rem;
+            margin-top: 4px;
+        }
+
+        /* Stats bar */
+        .stats-bar {
+            display: flex;
+            gap: 16px;
+            margin: 16px 0;
+            flex-wrap: wrap;
+        }
+
+        .stat {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 8px 14px;
+            font-size: 0.8rem;
+        }
+
+        .stat-value {
+            font-weight: 600;
+            color: var(--accent);
+            font-size: 1rem;
+        }
+
+        .stat-label {
+            color: var(--text-muted);
+        }
+
+        /* Search */
+        .search-box {
+            position: relative;
+            margin-bottom: 20px;
+        }
+
+        .search-box i {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+            font-size: 1rem;
+        }
+
+        #search-input {
+            width: 100%;
+            padding: 12px 16px 12px 42px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            color: var(--text);
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        #search-input:focus {
+            border-color: var(--accent);
+        }
+
+        #search-input::placeholder {
+            color: var(--text-muted);
+        }
+
+        /* Loading */
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted);
+        }
+
+        .loading .spinner {
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-bottom: 12px;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Results */
+        .results-header {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+        }
+
+        .result-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px;
+            margin-bottom: 12px;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+        }
+
+        .result-card:hover {
+            border-color: var(--accent);
+            background: var(--surface-hover);
+        }
+
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+
+        .result-title {
+            font-weight: 600;
+            font-size: 0.95rem;
+            color: var(--text);
+        }
+
+        .result-meta {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            white-space: nowrap;
+        }
+
+        .result-similarity {
+            display: inline-block;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 2px 6px;
+            font-size: 0.7rem;
+            color: var(--accent);
+            font-family: monospace;
+        }
+
+        .result-chunk {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            line-height: 1.5;
+            max-height: 80px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .result-chunk::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 20px;
+            background: linear-gradient(transparent, var(--surface));
+        }
+
+        .chunk-badge {
+            display: inline-block;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 1px 6px;
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Conversation detail view */
+        .conversation-detail {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+
+        .detail-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 16px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .detail-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        .back-btn {
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            padding: 6px 12px;
+            border-radius: var(--radius);
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: all 0.2s;
+        }
+
+        .back-btn:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .detail-meta {
+            display: flex;
+            gap: 16px;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+        }
+
+        .detail-meta span {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .trajectory {
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+            font-size: 0.8rem;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-height: 600px;
+            overflow-y: auto;
+            padding: 16px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            color: var(--text-muted);
+        }
+
+        .trajectory .user-msg { color: var(--accent); font-weight: 600; }
+        .trajectory .thinking { color: var(--warning); }
+        .trajectory .tool-call { color: var(--success); }
+        .trajectory .response { color: var(--text); }
+        .trajectory .result { color: var(--text-muted); font-size: 0.75rem; }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+        }
+
+        .empty-state i {
+            font-size: 3rem;
+            margin-bottom: 16px;
+            display: block;
+            color: var(--border);
+        }
+
+        /* Error */
+        .error-msg {
+            background: rgba(248, 81, 73, 0.1);
+            border: 1px solid var(--danger);
+            border-radius: var(--radius);
+            padding: 12px 16px;
+            color: var(--danger);
+            font-size: 0.85rem;
+            margin-bottom: 16px;
+        }
+
+        /* Match snippets */
+        .match-list {
+            margin-top: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .match-snippet {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 8px 10px;
+            cursor: pointer;
+            transition: border-color 0.15s;
+            position: relative;
+        }
+
+        .match-snippet:hover {
+            border-color: var(--accent);
+        }
+
+        .match-badge {
+            display: inline-block;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 1px 5px;
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-right: 6px;
+        }
+
+        .match-score {
+            font-size: 0.65rem;
+            color: var(--accent);
+            font-family: monospace;
+            float: right;
+        }
+
+        .match-text {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            line-height: 1.4;
+            margin-top: 4px;
+            max-height: 60px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .match-text::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 15px;
+            background: linear-gradient(transparent, var(--bg));
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .tab {
+            padding: 8px 16px;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 0.9rem;
+            border-bottom: 2px solid transparent;
+            transition: color 0.2s, border-color 0.2s;
+        }
+
+        .tab:hover { color: var(--text); }
+        .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* Skill cards */
+        .skill-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px;
+            margin-bottom: 12px;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+        }
+
+        .skill-card:hover {
+            border-color: var(--accent);
+            background: var(--surface-hover);
+        }
+
+        .skill-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+
+        .skill-title {
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+
+        .skill-badges {
+            display: flex;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+
+        .skill-badge {
+            display: inline-block;
+            border-radius: 4px;
+            padding: 2px 8px;
+            font-size: 0.7rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .badge-research { background: rgba(88, 166, 255, 0.15); color: var(--accent); border: 1px solid rgba(88, 166, 255, 0.3); }
+        .badge-build { background: rgba(63, 185, 80, 0.15); color: var(--success); border: 1px solid rgba(63, 185, 80, 0.3); }
+        .badge-configure { background: rgba(210, 153, 34, 0.15); color: var(--warning); border: 1px solid rgba(210, 153, 34, 0.3); }
+        .badge-qa { background: rgba(163, 113, 247, 0.15); color: #a371f7; border: 1px solid rgba(163, 113, 247, 0.3); }
+        .badge-debug { background: rgba(248, 81, 73, 0.15); color: var(--danger); border: 1px solid rgba(248, 81, 73, 0.3); }
+        .badge-other { background: rgba(139, 148, 158, 0.15); color: var(--text-muted); border: 1px solid var(--border); }
+        .badge-simple { background: rgba(63, 185, 80, 0.1); color: var(--success); }
+        .badge-medium { background: rgba(210, 153, 34, 0.1); color: var(--warning); }
+        .badge-complex { background: rgba(248, 81, 73, 0.1); color: var(--danger); }
+
+        .skill-problem {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        .skill-source {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        /* Skill detail */
+        .skill-detail {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+
+        .skill-section {
+            margin-bottom: 16px;
+        }
+
+        .skill-section h3 {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        .skill-section pre {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-size: 0.85rem;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-break: break-word;
+            color: var(--text);
+        }
+
+        .skill-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+        }
+
+        .skill-btn {
+            padding: 6px 14px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            background: var(--bg);
+            color: var(--text);
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: all 0.2s;
+        }
+
+        .skill-btn:hover { border-color: var(--accent); color: var(--accent); }
+        .skill-btn-primary { border-color: var(--accent); color: var(--accent); }
+
+        /* Process button */
+        .process-bar {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+            padding: 12px 16px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+        }
+
+        .process-bar button {
+            padding: 6px 14px;
+            border-radius: var(--radius);
+            border: 1px solid var(--accent);
+            background: rgba(88, 166, 255, 0.1);
+            color: var(--accent);
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+
+        .process-bar button:hover { background: rgba(88, 166, 255, 0.2); }
+        .process-bar button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .process-info {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        /* Filter bar */
+        .filter-bar {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .filter-btn {
+            padding: 4px 12px;
+            border-radius: 4px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: all 0.2s;
+        }
+
+        .filter-btn:hover { border-color: var(--text-muted); color: var(--text); }
+        .filter-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(88, 166, 255, 0.1); }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg); }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1><i class="bi bi-chat-dots"></i> Conversation Knowledge Base</h1>
+            <div class="subtitle">Search across your stored AI conversation history</div>
+        </header>
+
+        <div class="stats-bar" id="stats-bar">
+            <div class="stat">
+                <span class="stat-value" id="stat-convs">—</span>
+                <span class="stat-label"> conversations</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value" id="stat-chunks">—</span>
+                <span class="stat-label"> search chunks</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value" id="stat-date">—</span>
+                <span class="stat-label"> date range</span>
+            </div>
+            <div class="stat" id="sync-status" style="cursor: pointer;" onclick="doSync()">
+                <span class="stat-value" id="stat-sync">—</span>
+                <span class="stat-label" id="stat-sync-label"> checking for updates...</span>
+            </div>
+        </div>
+
+        <div class="search-box">
+            <i class="bi bi-search"></i>
+            <input type="text" id="search-input" placeholder="Search your conversations... (e.g. 'how did I set up the email routine?')" autocomplete="off">
+        </div>
+
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('search')">🔍 Search</button>
+            <button class="tab" onclick="switchTab('skills')">📋 Skills <span id="skills-count-badge" style="opacity:0.5"></span></button>
+        </div>
+
+        <div id="tab-search" class="tab-content active">
+            <div id="results-container">
+                <div class="empty-state">
+                    <i class="bi bi-chat-square-text"></i>
+                    <p>Start typing to search across your conversation history</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-skills" class="tab-content">
+            <div class="process-bar" id="skill-process-bar">
+                <button id="process-skills-btn" onclick="processSkills()">⚡ Extract Skills</button>
+                <span class="process-info" id="skill-process-info">Loading...</span>
+            </div>
+            <div class="filter-bar" id="skill-filters">
+                <button class="filter-btn active" onclick="filterSkills('')">All</button>
+                <button class="filter-btn" onclick="filterSkills('research')">Research</button>
+                <button class="filter-btn" onclick="filterSkills('build')">Build</button>
+                <button class="filter-btn" onclick="filterSkills('configure')">Configure</button>
+                <button class="filter-btn" onclick="filterSkills('qa')">QA</button>
+                <button class="filter-btn" onclick="filterSkills('debug')">Debug</button>
+            </div>
+            <div id="skills-container">
+                <div class="empty-state">
+                    <i class="bi bi-clipboard-check"></i>
+                    <p>Loading skills...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/api/custom-apps/sdk.js"></script>
+    <script>
+        const searchInput = document.getElementById('search-input');
+        const resultsContainer = document.getElementById('results-container');
+        let searchTimer = null;
+        let currentView = 'search';
+
+        // Load stats on page load
+        async function loadStats() {
+            try {
+                const stats = await window.omnideck.invoke('get_stats');
+                document.getElementById('stat-convs').textContent = stats.total_conversations;
+                document.getElementById('stat-chunks').textContent = stats.total_chunks.toLocaleString();
+                document.getElementById('stat-date').textContent = 
+                    `${stats.date_range.start} → ${stats.date_range.end}`;
+            } catch (e) {
+                console.error('Failed to load stats:', e);
+            }
+            // Check sync status
+            checkSyncStatus();
+        }
+
+        // Check if sync is needed
+        async function checkSyncStatus() {
+            try {
+                const status = await window.omnideck.invoke('get_sync_status');
+                const syncEl = document.getElementById('stat-sync');
+                const labelEl = document.getElementById('stat-sync-label');
+                
+                if (status.needs_sync) {
+                    syncEl.textContent = `${status.new_conversations + status.updated_conversations}`;
+                    labelEl.textContent = ` need sync — click to update`;
+                    document.getElementById('sync-status').style.borderColor = 'var(--warning)';
+                } else {
+                    syncEl.textContent = '✓';
+                    labelEl.textContent = ` up to date (${status.indexed} indexed)`;
+                    document.getElementById('sync-status').style.borderColor = 'var(--success)';
+                }
+            } catch (e) {
+                document.getElementById('stat-sync').textContent = '?';
+                document.getElementById('stat-sync-label').textContent = ' sync status unavailable';
+            }
+        }
+
+        // Run sync
+        async function doSync() {
+            const syncEl = document.getElementById('stat-sync');
+            const labelEl = document.getElementById('stat-sync-label');
+            syncEl.textContent = '⟳';
+            labelEl.textContent = ' syncing...';
+            document.getElementById('sync-status').style.borderColor = 'var(--accent)';
+
+            try {
+                const result = await window.omnideck.invoke('sync', { max_seconds: 100 });
+                
+                if (result.error) {
+                    syncEl.textContent = '!';
+                    labelEl.textContent = ` ${result.error}`;
+                    document.getElementById('sync-status').style.borderColor = 'var(--danger)';
+                    return;
+                }
+
+                // Reload stats
+                await loadStats();
+                
+                if (result.remaining > 0) {
+                    syncEl.textContent = `${result.remaining}`;
+                    labelEl.textContent = ` remaining — click again to continue`;
+                    document.getElementById('sync-status').style.borderColor = 'var(--warning)';
+                } else {
+                    syncEl.textContent = '✓';
+                    labelEl.textContent = ` ${result.message}`;
+                    document.getElementById('sync-status').style.borderColor = 'var(--success)';
+                }
+            } catch (e) {
+                syncEl.textContent = '!';
+                labelEl.textContent = ` sync failed: ${e.message}`;
+                document.getElementById('sync-status').style.borderColor = 'var(--danger)';
+            }
+        }
+
+        // Debounced search
+        searchInput.addEventListener('input', (e) => {
+            clearTimeout(searchTimer);
+            const query = e.target.value.trim();
+            
+            if (query.length < 3) {
+                resultsContainer.innerHTML = `
+                    <div class="empty-state">
+                        <i class="bi bi-chat-square-text"></i>
+                        <p>Start typing to search across your conversation history</p>
+                    </div>
+                `;
+                return;
+            }
+
+            searchTimer = setTimeout(() => doSearch(query), 300);
+        });
+
+        async function doSearch(query) {
+            currentView = 'search';
+            resultsContainer.innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Searching...</p>
+                </div>
+            `;
+
+            try {
+                const result = await window.omnideck.invoke('search', { query, limit: 20 });
+                
+                if (result.error) {
+                    resultsContainer.innerHTML = `<div class="error-msg">${result.error}</div>`;
+                    return;
+                }
+
+                if (!result.results || result.results.length === 0) {
+                    resultsContainer.innerHTML = `
+                        <div class="empty-state">
+                            <i class="bi bi-emoji-frown"></i>
+                            <p>No results found for "${query}"</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                const resultsHtml = result.results.map(r => {
+                    const matchesHtml = r.matches.map((m, i) => `
+                        <div class="match-snippet" onclick="event.stopPropagation(); viewConversation('${r.conversation_id}')">
+                            <span class="match-badge">${m.chunk_type.replace('_', ' ')}</span>
+                            <span class="match-score">${(m.score * 100).toFixed(0)}%</span>
+                            <div class="match-text">${escapeHtml(m.chunk_text)}</div>
+                        </div>
+                    `).join('');
+                    return `
+                        <div class="result-card" onclick="viewConversation('${r.conversation_id}')">
+                            <div class="result-header">
+                                <div>
+                                    <div class="result-title">${escapeHtml(r.title)}</div>
+                                    <div class="result-meta">${r.date} · ${r.match_count} match${r.match_count !== 1 ? 'es' : ''}</div>
+                                </div>
+                                <div class="result-similarity">${(r.score * 100).toFixed(1)}%</div>
+                            </div>
+                            <div class="match-list">${matchesHtml}</div>
+                        </div>
+                    `;
+                }).join('');
+
+                resultsContainer.innerHTML = `
+                    <div class="results-header">
+                        ${result.results.length} results from ${result.total_chunks_searched} chunks
+                    </div>
+                    ${resultsHtml}
+                `;
+            } catch (e) {
+                resultsContainer.innerHTML = `<div class="error-msg">Search failed: ${e.message}</div>`;
+            }
+        }
+
+        async function viewConversation(convId) {
+            currentView = 'detail';
+            resultsContainer.innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Loading conversation...</p>
+                </div>
+            `;
+
+            try {
+                const conv = await window.omnideck.invoke('get_conversation', { conversation_id: convId });
+                
+                if (conv.error) {
+                    resultsContainer.innerHTML = `<div class="error-msg">${conv.error}</div>`;
+                    return;
+                }
+
+                // Format trajectory with syntax highlighting
+                let trajectoryHtml = escapeHtml(conv.trajectory || '');
+                trajectoryHtml = trajectoryHtml
+                    .replace(/## USER MESSAGE:/g, '<span class="user-msg">## USER MESSAGE:</span>')
+                    .replace(/THINKING:/g, '<span class="thinking">THINKING:</span>')
+                    .replace(/TOOL_CALL:/g, '<span class="tool-call">TOOL_CALL:</span>')
+                    .replace(/RESPONSE:/g, '<span class="response">RESPONSE:</span>')
+                    .replace(/RESULT\(/g, '<span class="result">RESULT(');
+
+                resultsContainer.innerHTML = `
+                    <div class="conversation-detail">
+                        <div class="detail-header">
+                            <div>
+                                <div class="detail-title">${escapeHtml(conv.title)}</div>
+                                <div class="detail-meta">
+                                    <span><i class="bi bi-calendar"></i> ${conv.date}</span>
+                                    <span><i class="bi bi-lightning"></i> ${conv.num_tool_calls} tool calls</span>
+                                    <span><i class="bi bi-chat"></i> ${conv.num_user_msgs} user messages</span>
+                                    <span><i class="bi bi-file-text"></i> ~${conv.est_tokens.toLocaleString()} tokens</span>
+                                </div>
+                            </div>
+                            <button class="back-btn" onclick="backToSearch()">
+                                <i class="bi bi-arrow-left"></i> Back
+                            </button>
+                        </div>
+                        <div class="trajectory">${trajectoryHtml}</div>
+                    </div>
+                `;
+            } catch (e) {
+                resultsContainer.innerHTML = `<div class="error-msg">Failed to load: ${e.message}</div>`;
+            }
+        }
+
+        function backToSearch() {
+            currentView = 'search';
+            const query = searchInput.value.trim();
+            if (query.length >= 3) {
+                doSearch(query);
+            } else {
+                resultsContainer.innerHTML = `
+                    <div class="empty-state">
+                        <i class="bi bi-chat-square-text"></i>
+                        <p>Start typing to search across your conversation history</p>
+                    </div>
+                `;
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text || '';
+            return div.innerHTML;
+        }
+
+        // Initialize
+        loadStats();
+        searchInput.focus();
+
+        // ─── Tab Management ───────────────────────────────────────
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById(`tab-${tabName}`).classList.add('active');
+            
+            if (tabName === 'skills') {
+                loadSkills();
+            }
+        }
+
+        // ─── Skills Tab ──────────────────────────────────────────
+
+        let currentSkillFilter = '';
+        let skillsLoaded = false;
+
+        async function loadSkills() {
+            const container = document.getElementById('skills-container');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading skills...</p></div>';
+            
+            try {
+                // Load skill status
+                const status = await window.omnideck.invoke('get_skill_status');
+                const infoEl = document.getElementById('skill-process-info');
+                const btnEl = document.getElementById('process-skills-btn');
+                
+                infoEl.textContent = `${status.skills_extracted} extracted · ${status.pending} pending`;
+                btnEl.disabled = status.pending === 0;
+                if (status.pending === 0) {
+                    btnEl.textContent = '✓ All Extracted';
+                } else {
+                    btnEl.textContent = '⚡ Extract Skills';
+                }
+                
+                // Update badge
+                const badge = document.getElementById('skills-count-badge');
+                badge.textContent = status.skills_extracted > 0 ? `(${status.skills_extracted})` : '';
+
+                // Load skills
+                const data = await window.omnideck.invoke('list_skills', { 
+                    task_type: currentSkillFilter, 
+                    sort: 'date', 
+                    limit: 100 
+                });
+
+                if (data.skills.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <i class="bi bi-clipboard-check"></i>
+                            <p>No skills extracted yet. Click "Extract Skills" to start.</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                container.innerHTML = data.skills.map(s => {
+                    const typeClass = `badge-${s.task_type || 'other'}`;
+                    const diffClass = `badge-${s.difficulty || 'medium'}`;
+                    return `
+                        <div class="skill-card" onclick="viewSkill('${s.conversation_id}')">
+                            <div class="skill-header">
+                                <div>
+                                    <div class="skill-title">${escapeHtml(s.skill_title)}</div>
+                                    <div class="skill-source">From: ${escapeHtml(s.conv_title)} · ${s.date}</div>
+                                </div>
+                                <div class="skill-badges">
+                                    <span class="skill-badge ${typeClass}">${s.task_type || 'other'}</span>
+                                    <span class="skill-badge ${diffClass}">${s.difficulty || 'medium'}</span>
+                                </div>
+                            </div>
+                            <div class="skill-problem">${escapeHtml(s.problem || '').substring(0, 200)}</div>
+                        </div>
+                    `;
+                }).join('');
+                
+                skillsLoaded = true;
+            } catch (e) {
+                container.innerHTML = `<div class="error-msg">Failed to load skills: ${e.message}</div>`;
+            }
+        }
+
+        function filterSkills(type) {
+            currentSkillFilter = type;
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            event.target.classList.add('active');
+            loadSkills();
+        }
+
+        async function viewSkill(convId) {
+            const container = document.getElementById('skills-container');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading skill...</p></div>';
+            
+            try {
+                const skill = await window.omnideck.invoke('get_skill', { conversation_id: convId });
+                
+                if (skill.error) {
+                    container.innerHTML = `<div class="error-msg">${skill.error}</div>`;
+                    return;
+                }
+
+                container.innerHTML = `
+                    <div class="skill-detail">
+                        <div class="detail-header">
+                            <div>
+                                <div class="detail-title">${escapeHtml(skill.skill_title)}</div>
+                                <div class="detail-meta">
+                                    <span><i class="bi bi-folder"></i> ${escapeHtml(skill.conv_title)}</span>
+                                    <span><i class="bi bi-calendar"></i> ${skill.date}</span>
+                                    <span><i class="bi bi-lightning"></i> ${skill.num_tool_calls} tool calls</span>
+                                    <span><i class="bi bi-cpu"></i> ${skill.model}</span>
+                                </div>
+                            </div>
+                            <button class="back-btn" onclick="loadSkills()">
+                                <i class="bi bi-arrow-left"></i> Back
+                            </button>
+                        </div>
+                        
+                        <div class="skill-section">
+                            <h3>Problem</h3>
+                            <pre>${escapeHtml(skill.problem || 'N/A')}</pre>
+                        </div>
+                        
+                        <div class="skill-section">
+                            <h3>Happy Path</h3>
+                            <pre>${escapeHtml(skill.happy_path || 'N/A')}</pre>
+                        </div>
+                        
+                        <div class="skill-section">
+                            <h3>Pitfalls</h3>
+                            <pre>${escapeHtml(skill.pitfalls || 'N/A')}</pre>
+                        </div>
+                        
+                        <div class="skill-section">
+                            <h3>Notes</h3>
+                            <pre>${escapeHtml(skill.notes || 'N/A')}</pre>
+                        </div>
+                        
+                        <div class="skill-actions">
+                            <button class="skill-btn skill-btn-primary" onclick="loadSkillIntoChat('${convId}')">
+                                <i class="bi bi-chat"></i> Load into Chat
+                            </button>
+                            <button class="skill-btn" onclick="viewConversationFromSkills('${convId}')">
+                                <i class="bi bi-file-text"></i> View Source
+                            </button>
+                            <button class="skill-btn" onclick="reextractSkill('${convId}')">
+                                <i class="bi bi-arrow-clockwise"></i> Re-extract
+                            </button>
+                        </div>
+                    </div>
+                `;
+            } catch (e) {
+                container.innerHTML = `<div class="error-msg">Failed to load skill: ${e.message}</div>`;
+            }
+        }
+
+        function loadSkillIntoChat(convId) {
+            // Fetch the skill and compose into chat
+            window.omnideck.invoke('get_skill', { conversation_id: convId }).then(skill => {
+                const context = `Here's a proven happy path from a past conversation for this type of task:\n\n**Problem:** ${skill.problem}\n\n**Happy Path:**\n${skill.happy_path}\n\n**Pitfalls to avoid:**\n${skill.pitfalls}\n\n**Notes:**\n${skill.notes}\n\nPlease follow this approach.`;
+                window.omnideck.chat.compose({ text: context });
+            });
+        }
+
+        function viewConversationFromSkills(convId) {
+            // Switch to search tab and show the conversation
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelector('.tab').classList.add('active');
+            document.getElementById('tab-search').classList.add('active');
+            viewConversation(convId);
+        }
+
+        async function reextractSkill(convId) {
+            const btn = event.target;
+            btn.disabled = true;
+            btn.textContent = 'Extracting...';
+            
+            try {
+                const result = await window.omnideck.invoke('reextract_skill', { 
+                    conversation_id: convId, 
+                    model: 'deepseek-v4-pro:cloud' 
+                });
+                
+                if (result.error) {
+                    btn.textContent = 'Failed';
+                    setTimeout(() => { btn.disabled = false; btn.textContent = 'Re-extract'; }, 2000);
+                } else {
+                    btn.textContent = '✓ Done';
+                    setTimeout(() => viewSkill(convId), 1000);
+                }
+            } catch (e) {
+                btn.textContent = 'Error';
+                setTimeout(() => { btn.disabled = false; btn.textContent = 'Re-extract'; }, 2000);
+            }
+        }
+
+        async function processSkills() {
+            const btn = document.getElementById('process-skills-btn');
+            const info = document.getElementById('skill-process-info');
+            btn.disabled = true;
+            btn.textContent = '⟳ Extracting...';
+            info.textContent = 'Processing batch...';
+            
+            try {
+                const result = await window.omnideck.invoke('process_skills_batch', { 
+                    model: 'deepseek-v4-pro:cloud', 
+                    max_seconds: 100 
+                });
+                
+                if (result.error) {
+                    info.textContent = result.error;
+                    btn.disabled = false;
+                    btn.textContent = '⚡ Extract Skills';
+                    return;
+                }
+                
+                info.textContent = result.message;
+                
+                if (result.remaining > 0) {
+                    btn.disabled = false;
+                    btn.textContent = '⚡ Continue Extraction';
+                } else {
+                    btn.textContent = '✓ All Extracted';
+                }
+                
+                // Reload skills list
+                loadSkills();
+            } catch (e) {
+                info.textContent = `Error: ${e.message}`;
+                btn.disabled = false;
+                btn.textContent = '⚡ Extract Skills';
+            }
+        }
+    </script>
+</body>
+</html>
