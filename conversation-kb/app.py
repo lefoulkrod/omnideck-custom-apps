@@ -522,6 +522,7 @@ def get_sync_status():
         on_disk = 0
         new_convs = []
         updated_convs = []
+        renamed_convs = []
         
         for d in sorted(os.listdir(CONV_DIR)):
             if d.startswith("_") or d == "routines":
@@ -532,30 +533,53 @@ def get_sync_status():
             on_disk += 1
             
             # Check if in DB
-            row = conn.execute("SELECT id, indexed_at FROM conversations WHERE id = ?", (d,)).fetchone()
+            row = conn.execute("SELECT id, indexed_at, title FROM conversations WHERE id = ?", (d,)).fetchone()
             file_mtime = os.path.getmtime(events_path)
             
             if not row:
                 new_convs.append(d)
             elif row["indexed_at"] and file_mtime > row["indexed_at"]:
                 updated_convs.append(d)
+            elif row:
+                # Check for rename (metadata.json title != DB title)
+                meta_path = os.path.join(CONV_DIR, d, "metadata.json")
+                if os.path.exists(meta_path):
+                    try:
+                        disk_title = json.load(open(meta_path)).get("title", "")
+                        if disk_title and row["title"] != disk_title:
+                            renamed_convs.append(d)
+                    except:
+                        pass
+        
+        # Check for deleted conversations (in DB but not on disk)
+        db_ids = set(r[0] for r in conn.execute("SELECT id FROM conversations").fetchall())
+        disk_ids = set()
+        for d in os.listdir(CONV_DIR):
+            if d.startswith("_") or d == "routines":
+                continue
+            if os.path.exists(os.path.join(CONV_DIR, d, "events.jsonl")):
+                disk_ids.add(d)
+        deleted_convs = db_ids - disk_ids
         
         return {
             "indexed": indexed,
             "on_disk": on_disk,
             "new_conversations": len(new_convs),
             "updated_conversations": len(updated_convs),
-            "needs_sync": len(new_convs) + len(updated_convs) > 0,
+            "renamed_conversations": len(renamed_convs),
+            "deleted_conversations": len(deleted_convs),
+            "needs_sync": len(new_convs) + len(updated_convs) + len(renamed_convs) + len(deleted_convs) > 0,
         }
     finally:
         conn.close()
 
 @action
 def sync(max_seconds: int = 100):
-    """Sync the index with new and updated conversations.
+    """Sync the index with new, updated, renamed, and deleted conversations.
     
     Scans for conversations not yet indexed (or with updated events.jsonl),
-    processes them, and returns stats. Designed to fit within the 120s action timeout.
+    processes them, and returns stats. Also cleans up deleted conversations
+    and updates renamed ones. Designed to fit within the 120s action timeout.
     """
     conn = get_db()
     try:
@@ -566,7 +590,46 @@ def sync(max_seconds: int = 100):
         except:
             pass  # Column already exists
         
-        # Find conversations that need processing
+        # 1. Clean up deleted conversations (in DB but not on disk)
+        db_ids = set(r[0] for r in conn.execute("SELECT id FROM conversations").fetchall())
+        disk_ids = set()
+        for d in os.listdir(CONV_DIR):
+            if d.startswith("_") or d == "routines":
+                continue
+            if os.path.exists(os.path.join(CONV_DIR, d, "events.jsonl")):
+                disk_ids.add(d)
+        deleted_ids = db_ids - disk_ids
+        
+        deleted_count = 0
+        for conv_id in deleted_ids:
+            conn.execute("DELETE FROM search_embeddings WHERE conversation_id = ?", (conv_id,))
+            conn.execute("DELETE FROM skills WHERE conversation_id = ?", (conv_id,))
+            conn.execute("DELETE FROM conversations WHERE id = ?", (conv_id,))
+            deleted_count += 1
+        
+        if deleted_count > 0:
+            conn.commit()
+        
+        # 2. Update renamed conversations (title changed on disk)
+        renamed_count = 0
+        for conv_id in (db_ids & disk_ids):
+            row = conn.execute("SELECT title FROM conversations WHERE id = ?", (conv_id,)).fetchone()
+            if not row:
+                continue
+            meta_path = os.path.join(CONV_DIR, conv_id, "metadata.json")
+            if os.path.exists(meta_path):
+                try:
+                    disk_title = json.load(open(meta_path)).get("title", "")
+                    if disk_title and row["title"] != disk_title:
+                        conn.execute("UPDATE conversations SET title = ? WHERE id = ?", (disk_title, conv_id))
+                        renamed_count += 1
+                except:
+                    pass
+        
+        if renamed_count > 0:
+            conn.commit()
+        
+        # 3. Find conversations that need processing (new or updated)
         to_process = []
         for d in sorted(os.listdir(CONV_DIR)):
             if d.startswith("_") or d == "routines":
@@ -581,8 +644,8 @@ def sync(max_seconds: int = 100):
             if not row or (row["indexed_at"] and file_mtime > row["indexed_at"]) or (row and not row["indexed_at"]):
                 to_process.append(d)
         
-        if not to_process:
-            return {"processed": 0, "message": "Index is up to date", "new_conversations": 0, "updated_conversations": 0}
+        if not to_process and deleted_count == 0 and renamed_count == 0:
+            return {"processed": 0, "message": "Index is up to date", "new_conversations": 0, "updated_conversations": 0, "deleted": 0, "renamed": 0}
         
         # Check Ollama is available
         try:
@@ -658,13 +721,25 @@ def sync(max_seconds: int = 100):
         
         elapsed = time.time() - start_time
         
+        parts = []
+        if processed > 0:
+            parts.append(f"processed {processed} ({is_new} new, {is_updated} updated)")
+        if deleted_count > 0:
+            parts.append(f"removed {deleted_count} deleted")
+        if renamed_count > 0:
+            parts.append(f"updated {renamed_count} renamed")
+        if not parts:
+            parts.append("up to date")
+        
         return {
             "processed": processed,
             "new_conversations": is_new,
             "updated_conversations": is_updated,
+            "deleted": deleted_count,
+            "renamed": renamed_count,
             "remaining": len(to_process) - processed,
             "elapsed": round(elapsed, 1),
-            "message": f"Processed {processed} conversation{'s' if processed != 1 else ''} ({is_new} new, {is_updated} updated) in {elapsed:.1f}s",
+            "message": f"{', '.join(parts)}" + (f" in {elapsed:.1f}s" if elapsed > 0 else ""),
         }
     finally:
         conn.close()
