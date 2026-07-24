@@ -35,6 +35,10 @@ immediately. Runtime state belongs in each app's ignored `data/` directory.
 
 - [`code-ide`](code-ide) — a VS Code-inspired file editor, Git diff viewer,
   and command terminal.
+- [`conversation-kb`](conversation-kb) — a semantic search and skill
+  extraction tool for your stored AI conversation history. Search past
+  conversations by meaning, extract generalized reusable "happy paths" with a
+  local LLM, and let your agents query the knowledge base via CLI.
 - [`omnideck-projects`](omnideck-projects) — a project-centric organizer for
   conversations, artifacts, files, folders, storage awareness, and cleanup
   planning.
