@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tamagotchi</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Press Start 2P', monospace;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    display: flex;
+    justify-content: center;
+    align-items: stretch;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  /* Container query: everything inside .device uses cqw units.
+     1cqw = 1% of device width. Whole device scales as one unit. */
+  .device {
+    container-type: inline-size;
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100dvh;
+    background: linear-gradient(145deg, #ff6b9d, #c44569);
+    border-radius: 4cqw;
+    padding: 3cqw;
+    box-shadow: inset 0 0.5cqw 3cqw rgba(255,255,255,0.2);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .device::before {
+    display: none;
+  }
+
+  .screen {
+    background: #c5e8a0;
+    border: 0.8cqw solid #2d3436;
+    border-radius: 2.5cqw;
+    padding: 3cqw;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  .screen-title {
+    font-size: 2.6cqw;
+    color: #2d3436;
+    margin-bottom: 0.5cqw;
+    text-align: center;
+    width: 100%;
+    flex-shrink: 0;
+  }
+
+  .pet-area {
+    width: 100%;
+    flex: 1;
+    min-height: 30cqw;
+    position: relative;
+    margin: 0.5cqw 0;
+    overflow: hidden;
+  }
+
+  /* Pet is now 26cqw — much bigger relative to screen */
+  .pet-wrap {
+    position: absolute;
+    bottom: 2cqw;
+    left: 50%;
+    transform: translateX(-50%);
+    transition: left 1.5s ease-in-out, bottom 0.3s ease;
+    cursor: pointer;
+    user-select: none;
+    z-index: 2;
+    width: 26cqw;
+    height: 26cqw;
+  }
+
+  .pet-wrap canvas {
+    width: 100%;
+    height: 100%;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    display: block;
+  }
+
+  .pet-wrap.bouncing { animation: bounce 0.3s ease; }
+  .pet-wrap.dead { opacity: 0.35; filter: grayscale(1); cursor: default; }
+
+  @keyframes bounce {
+    0%, 100% { transform: translateX(-50%) translateY(0); }
+    50% { transform: translateX(-50%) translateY(-5cqw); }
+  }
+
+  .pet-wrap.egg-shake { animation: eggShake 0.4s ease; }
+  @keyframes eggShake {
+    0%, 100% { transform: translateX(-50%) rotate(0); }
+    25% { transform: translateX(-50%) rotate(-12deg); }
+    75% { transform: translateX(-50%) rotate(12deg); }
+  }
+
+  .pet-wrap.hatch-pop { animation: hatchPop 0.6s ease; }
+  @keyframes hatchPop {
+    0% { transform: translateX(-50%) scale(0); }
+    50% { transform: translateX(-50%) scale(1.5); }
+    100% { transform: translateX(-50%) scale(1); }
+  }
+
+  .poop-indicator {
+    position: absolute; bottom: 0.5cqw; right: 3cqw;
+    font-size: 7cqw;
+    animation: bob 2s ease-in-out infinite; z-index: 1;
+  }
+  @keyframes bob { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-1.2cqw)} }
+
+  .zzz {
+    position: absolute; top: 0.5cqw; right: 4cqw;
+    font-size: 5cqw;
+    animation: floatUp 2s ease-in-out infinite; z-index: 1;
+  }
+  @keyframes floatUp { 0%{transform:translateY(0);opacity:1} 100%{transform:translateY(-8cqw);opacity:0} }
+
+  .sick-badge {
+    position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+    font-size: 5cqw;
+    animation: bob 1s ease-in-out infinite; z-index: 3;
+  }
+
+  .rare-badge {
+    position: absolute; top: 0.5cqw; right: 1cqw;
+    font-size: 1.8cqw; color: #fff; background: #d63031;
+    padding: 0.8cqw 1.5cqw; border-radius: 1cqw; z-index: 3;
+  }
+
+  .stats {
+    width: 100%; display: grid; grid-template-columns: 1fr 1fr;
+    gap: 0.8cqw; margin-top: 0.5cqw; flex-shrink: 0;
+  }
+  .stat { display: flex; align-items: center; gap: 0.8cqw; font-size: 2cqw; color: #2d3436; }
+  .stat-label { width: 8cqw; text-align: right; flex-shrink: 0; }
+  .stat-bar-bg {
+    flex: 1; height: 2.8cqw; background: rgba(0,0,0,0.15);
+    border: 0.3cqw solid #2d3436; border-radius: 0.6cqw; overflow: hidden;
+  }
+  .stat-bar-fill { height: 100%; transition: width 0.4s ease, background 0.4s ease; }
+
+  .info-row {
+    width: 100%; display: flex; justify-content: space-between;
+    font-size: 2cqw; color: #2d3436; margin-top: 0.8cqw; padding: 0 1cqw; flex-shrink: 0;
+  }
+
+  .message {
+    width: 100%; min-height: 6cqw; text-align: center;
+    font-size: 2cqw; color: #2d3436; margin-top: 0.8cqw; padding: 0.5cqw;
+    line-height: 1.4; flex-shrink: 0;
+  }
+  .message.error { color: #c0392b; }
+  .message.success { color: #27ae60; }
+
+  .buttons {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 2.5cqw; margin-top: 3cqw; flex-shrink: 0;
+  }
+  .btn {
+    font-family: 'Press Start 2P', monospace; font-size: 2.3cqw;
+    background: #2d3436; color: #e0e0e0; border: none; border-radius: 6cqw;
+    padding: 3.5cqw 0.5cqw; cursor: pointer; transition: all 0.15s;
+    box-shadow: 0 1cqw 0 #1a1a2e; user-select: none;
+  }
+  .btn:hover { transform: translateY(0.3cqw); box-shadow: 0 0.7cqw 0 #1a1a2e; }
+  .btn:active { transform: translateY(1cqw); box-shadow: 0 0 0 #1a1a2e; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-feed { background: #e17055; }
+  .btn-play { background: #0984e3; }
+  .btn-clean { background: #00b894; }
+  .btn-meds { background: #d63031; }
+  .btn-sleep { background: #6c5ce7; }
+  .btn-quit { background: #2d3436; color: #e74c3c; }
+  .btn-quit:hover { color: #ff6b6b; }
+
+  .create-section {
+    text-align: center; padding: 3cqw 0; flex: 1;
+    display: flex; flex-direction: column; justify-content: center; align-items: center;
+  }
+  .create-section h2 { font-size: 3.5cqw; color: #2d3436; margin-bottom: 4cqw; }
+  .name-input {
+    font-family: 'Press Start 2P', monospace; font-size: 2.6cqw; padding: 2.5cqw;
+    border: 0.8cqw solid #2d3436; border-radius: 2cqw; background: #dfe6e9;
+    color: #2d3436; text-align: center; width: 48cqw; margin-bottom: 3cqw;
+  }
+  .name-input:focus { outline: none; border-color: #0984e3; }
+  .create-btn {
+    font-family: 'Press Start 2P', monospace; font-size: 2.6cqw; background: #00b894; color: #fff;
+    border: none; border-radius: 6cqw; padding: 3.5cqw 6cqw; cursor: pointer;
+    box-shadow: 0 1.2cqw 0 #006655; transition: all 0.15s;
+  }
+  .create-btn:hover { background: #55efc4; transform: translateY(0.3cqw); box-shadow: 0 0.9cqw 0 #006655; }
+  .create-btn:active { transform: translateY(1.2cqw); box-shadow: 0 0 0 #006655; }
+
+  .hidden { display: none !important; }
+  .footer-link { text-align: center; font-size: 1.8cqw; color: rgba(255,255,255,0.4); margin-top: 2.5cqw; flex-shrink: 0; }
+  .egg-hint { font-size: 2cqw; color: #2d3436; text-align: center; margin-top: 1cqw; line-height: 1.5; flex-shrink: 0; }
+  .tap-progress { display: flex; gap: 1cqw; justify-content: center; margin-top: 1cqw; }
+  .tap-dot {
+    width: 2.8cqw; height: 2.8cqw;
+    border-radius: 50%; border: 0.6cqw solid #2d3436; background: transparent;
+  }
+  .tap-dot.filled { background: #e17055; }
+</style>
+</head>
+<body>
+
+<div class="device">
+  <div id="createScreen" class="screen hidden">
+    <div class="create-section">
+      <h2>🥚 NEW EGG 🥚</h2>
+      <input type="text" id="petName" class="name-input" placeholder="Name your pet" maxlength="12" value="Pixel">
+      <br>
+      <button class="create-btn" onclick="createPet()">LAY EGG!</button>
+    </div>
+  </div>
+
+  <div id="gameScreen" class="screen hidden">
+    <div class="screen-title" id="petTitle">— Tamagotchi —</div>
+    <div class="pet-area" id="petArea">
+      <span id="rareBadge" class="rare-badge hidden">⭐ RARE</span>
+      <span id="sickBadge" class="sick-badge hidden">🤢</span>
+      <div id="petWrap" class="pet-wrap"><canvas id="petCanvas" width="128" height="128"></canvas></div>
+      <span id="poopIndicator" class="poop-indicator hidden">💩</span>
+      <span id="zzz" class="zzz hidden">💤</span>
+    </div>
+    <div id="eggHint" class="egg-hint hidden">Tap the egg to hatch it!<div id="tapProgress" class="tap-progress"></div></div>
+    <div class="stats" id="statsGrid">
+      <div class="stat"><span class="stat-label">HUNG</span><div class="stat-bar-bg"><div id="hungerBar" class="stat-bar-fill" style="width:0%;background:#e17055;"></div></div></div>
+      <div class="stat"><span class="stat-label">HAPP</span><div class="stat-bar-bg"><div id="happinessBar" class="stat-bar-fill" style="width:0%;background:#fdcb6e;"></div></div></div>
+      <div class="stat"><span class="stat-label">ENRG</span><div class="stat-bar-bg"><div id="energyBar" class="stat-bar-fill" style="width:0%;background:#0984e3;"></div></div></div>
+      <div class="stat"><span class="stat-label">HLTH</span><div class="stat-bar-bg"><div id="healthBar" class="stat-bar-fill" style="width:0%;background:#00b894;"></div></div></div>
+    </div>
+    <div class="info-row"><span id="ageDisplay">Age: —</span><span id="stageDisplay">Stage: —</span></div>
+    <div id="message" class="message">...</div>
+  </div>
+
+  <div class="buttons" id="buttonGrid">
+    <button class="btn btn-feed" onclick="doAction('feed')">🍖 FEED</button>
+    <button class="btn btn-play" onclick="doAction('play')">🎮 PLAY</button>
+    <button class="btn btn-clean" onclick="doAction('cleanup')">🧹 CLEAN</button>
+    <button class="btn btn-meds" onclick="doAction('medicine')">💊 MEDS</button>
+    <button class="btn btn-sleep" onclick="doAction('toggle_sleep')">😴 SLEEP</button>
+    <button class="btn btn-quit" onclick="quitPet()">🚪 QUIT</button>
+  </div>
+  <div class="footer-link">omnideck tamagotchi v3.0</div>
+</div>
+
+<script src="/api/custom-apps/sdk.js"></script>
+<script>
+// ============================================================
+//  PIXEL ART SYSTEM — 16×16 grids, canvas rendered
+// ============================================================
+const GRID = 16, SCALE = 8;
+
+// Shared colors
+const EYE='#2d3436', SHINE='#fff', BLUSH='#f9a8d4', MOUTH='#2d3436';
+const BEAK='#f97316', HORN='#fbbf24', SPARKLE='#fbbf24', MANE='#f0abfc';
+
+// --- Body (round blob, same for all species) ---
+const BODY = [
+  "................",
+  "................",
+  "................",
+  "................",
+  "......OOOO......",
+  "....OOBBBBBO....",
+  "...OBBBBBBBBO...",
+  "..OBBBBBBBBBBO..",
+  "..OBBBBBBBBBBO..",
+  "..OBBBBBBBBBBO..",
+  "..OBBBBBBBBBBO..",
+  "..OBBBBBBBBBBO..",
+  "...OBBBBBBBBO...",
+  "....OBBBBBBO....",
+  ".....OOOOOO.....",
+  "................",
+];
+
+// --- Belly overlay (lighter patch on lower body) ---
+const BELLY = [
+  "................","................","................","................",
+  "................","................","................","................",
+  "................",
+  "...LLLLLLLLLL...",
+  "...LLLLLLLLLL...",
+  "...LLLLLLLLLL...",
+  "...LLLLLLLLLL...",
+  "................","................","................",
+];
+
+// --- Ears ---
+const EARS = {
+  pointy: [
+    "..OO......OO....",
+    ".OBO......OBO...",
+    ".OBO......OBO...",
+    "..OO......OO....",
+    "................","................","................","................",
+    "................","................","................","................",
+    "................","................","................","................",
+  ],
+  floppy: [
+    "................","................",
+    "OO............OO",
+    "OBO..........OBO",
+    "OBO..........OBO",
+    "OBO..........OBO",
+    ".OO..........OO.",
+    "................","................","................","................",
+    "................","................","................","................",
+  ],
+  long: [
+    "..OO......OO....",
+    "..OBO....OBO....",
+    "..OBO....OBO....",
+    "..OBO....OBO....",
+    "..OBO....OBO....",
+    "..OO......OO....",
+    "................","................","................","................",
+    "................","................","................","................",
+    "................","................",
+  ],
+  round: [
+    "...OO....OO.....",
+    "..OBO....OBO....",
+    "...OO....OO.....",
+    "................","................","................","................",
+    "................","................","................","................",
+    "................","................","................","................",
+    "................",
+  ],
+  none: Array(16).fill("................"),
+};
+
+// --- Extras (species-specific features) ---
+const EXTRAS = {
+  Dragon: [
+    "...O......O.....",
+    "..OBO....OBO....",
+    "...O......O.....",
+    "................","................","................","................",
+    "................","................","................","................",
+    "................","................","................","................",
+    "................","................",
+  ],
+  Penguin: [
+    "................","................","................","................",
+    "................","................","................","................",
+    "................",
+    "...LLLLLLLLLL...",
+    "...LLLLLLLLLL...",
+    "...LLLLLLLLLL...",
+    "....LLLLLLLL....",
+    "................","................","................",
+  ],
+  Fox: [
+    "................",
+    "..O.O....O.O....",
+    "..O.O....O.O....",
+    "................","................","................",
+    "...LLLLLLLLLL...",
+    "..LLLLLLLLLLLL..",
+    "..LLLLLLLLLLLL..",
+    "...LLLLLLLLLL...",
+    "................","................","................",
+    "................","................","................",
+  ],
+  Unicorn: [
+    ".......H........",
+    ".......H........",
+    ".......H........",
+    "......HHH.......",
+    "................",
+    ".S.............S",
+    "................","................","................","................",
+    "................","................","................","................",
+    "................","................",
+  ],
+};
+
+// --- Faces (overlay: '.' = keep existing pixel) ---
+// Standard face (most pets)
+const FACE = {
+  normal: [
+    "................","................","................","................",
+    "................","................","................",
+    ".....WE..WE.....",
+    ".....EE..EE.....",
+    "................",
+    "....PP....PP....",
+    ".......MM.......",
+    "................","................","................","................",
+  ],
+  blink: [
+    "................","................","................","................",
+    "................","................","................","................",
+    ".....EE..EE.....",
+    "................",
+    "....PP....PP....",
+    ".......MM.......",
+    "................","................","................","................",
+  ],
+  happy: [
+    "................","................","................","................",
+    "................","................","................","................",
+    ".....EE..EE.....",
+    "................",
+    "....PP....PP....",
+    "......MMMM......",
+    "................","................","................","................",
+  ],
+  sleep: [
+    "................","................","................","................",
+    "................","................","................","................",
+    ".....EE..EE.....",
+    "................",
+    "....PP....PP....",
+    "........M.......",
+    "................","................","................","................",
+  ],
+  dead: [
+    "................","................","................","................",
+    "................","................","................",
+    "....E.E..E.E....",
+    ".....E....E.....",
+    "....E.E..E.E....",
+    "................",
+    "......MMM.......",
+    "................","................","................","................",
+  ],
+};
+
+// Beak face (penguin)
+const BEAK_FACE = {
+  normal: [
+    "................","................","................","................",
+    "................","................","................",
+    ".....WE..WE.....",
+    ".....EE..EE.....",
+    "......NNN.......",
+    "....PP....PP....",
+    "................","................","................","................","................",
+  ],
+  blink: [
+    "................","................","................","................",
+    "................","................","................","................",
+    ".....EE..EE.....",
+    "......NNN.......",
+    "....PP....PP....",
+    "................","................","................","................","................",
+  ],
+  happy: [
+    "................","................","................","................",
+    "................","................","................","................",
+    ".....EE..EE.....",
+    "....NNNNNN......",
+    "....PP....PP....",
+    "................","................","................","................","................",
+  ],
+  sleep: [
+    "................","................","................","................",
+    "................","................","................","................",
+    ".....EE..EE.....",
+    "......NNN.......",
+    "....PP....PP....",
+    "................","................","................","................","................",
+  ],
+  dead: [
+    "................","................","................","................",
+    "................","................","................",
+    "....E.E..E.E....",
+    ".....E....E.....",
+    "....E.E..E.E....",
+    "......NNN.......",
+    "................","................","................","................","................",
+  ],
+};
+
+// Bill face (duck)
+const BILL_FACE = {
+  normal: [
+    "................","................","................","................",
+    "................","................","................",
+    ".....WE..WE.....",
+    ".....EE..EE.....",
+    "......NNN.......",
+    "....NNNNNN......",
+    "....PP....PP....",
+    "................","................","................","................",
+  ],
+  blink: [
+    "................","................","................","................",
+    "................","................","................","................",
+    ".....EE..EE.....",
+    "......NNN.......",
+    "....NNNNNN......",
+    "....PP....PP....",
+    "................","................","................","................",
+  ],
+  happy: [
+    "................","................","................","................",
+    "................","................","................","................",
+    ".....EE..EE.....",
+    "....NNNNNN......",
+    "...NNNNNNNN.....",
+    "....PP....PP....",
+    "................","................","................","................",
+  ],
+  sleep: [
+    "................","................","................","................",
+    "................","................","................","................",
+    ".....EE..EE.....",
+    "......NNN.......",
+    "....NNNNNN......",
+    "....PP....PP....",
+    "................","................","................","................",
+  ],
+  dead: [
+    "................","................","................","................",
+    "................","................","................",
+    "....E.E..E.E....",
+    ".....E....E.....",
+    "....E.E..E.E....",
+    "......NNN.......",
+    "....NNNNNN......",
+    "................","................","................","................",
+  ],
+};
+
+// Wide face (frog — big smile)
+const WIDE_FACE = {
+  normal: [
+    "................","................","................","................",
+    "................","................","................",
+    ".....WE..WE.....",
+    ".....EE..EE.....",
+    "................",
+    "....PP....PP....",
+    "....MMMMMMMM....",
+    "................","................","................","................",
+  ],
+  blink: [
+    "................","................","................","................",
+    "................","................","................","................",
+    ".....EE..EE.....",
+    "................",
+    "....PP....PP....",
+    "....MMMMMMMM....",
+    "................","................","................","................",
+  ],
+  happy: [
+    "................","................","................","................",
+    "................","................","................","................",
+    ".....EE..EE.....",
+    "................",
+    "....PP....PP....",
+    "...MMMMMMMMM....",
+    "................","................","................","................",
+  ],
+  sleep: [
+    "................","................","................","................",
+    "................","................","................","................",
+    ".....EE..EE.....",
+    "................",
+    "....PP....PP....",
+    "......MMM.......",
+    "................","................","................","................",
+  ],
+  dead: [
+    "................","................","................","................",
+    "................","................","................",
+    "....E.E..E.E....",
+    ".....E....E.....",
+    "....E.E..E.E....",
+    "....PP....PP....",
+    "....MMMMMMMM....",
+    "................","................","................","................",
+  ],
+};
+
+const FACE_SETS = { standard: FACE, beak: BEAK_FACE, bill: BILL_FACE, wide: WIDE_FACE };
+
+// --- Egg ---
+const EGG_BODY = [
+  "................","................","................",
+  "......OOOO......",
+  "....OOBBBBBO....",
+  "...OBBBBBBBBO...",
+  "..OBBBBBBBBBBO..",
+  "..OBBBBBBBBBBO..",
+  "..OBBBBBBBBBBO..",
+  "..OBBBBBBBBBBO..",
+  "..OBBBBBBBBBBO..",
+  "..OBBBBBBBBBBO..",
+  "...OBBBBBBBBO...",
+  "....OBBBBBBO....",
+  ".....OOOOOO.....",
+  "................",
+];
+const EGG_FACE = [
+  "................","................","................","................",
+  "................","................","................",
+  ".....WE..WE.....",
+  ".....EE..EE.....",
+  "................",
+  "....PP....PP....",
+  ".......MM.......",
+  "................","................","................","................",
+];
+const CRACK_1 = [
+  "................","................","................","................",
+  "....C...........",
+  "...C.C..........",
+  "....C...........",
+  "................","................","................","................",
+  "................","................","................","................","................",
+];
+const CRACK_2 = [
+  "................","................","................","................",
+  "....C....C......",
+  "...C.C..C.C.....",
+  "....C....C......",
+  "................","................","................","................",
+  "................","................","................","................","................",
+];
+
+// --- Species configs ---
+const SPECIES = {
+  Cat:     { B:'#f97316', O:'#c2410c', L:'#fed7aa', ears:'pointy', belly:true,  face:'standard' },
+  Dog:     { B:'#d97706', O:'#92400e', L:'#fbbf24', ears:'floppy', belly:true,  face:'standard' },
+  Bunny:   { B:'#f3f4f6', O:'#9ca3af', L:'#ffffff', ears:'long',   belly:true,  face:'standard' },
+  Dragon:  { B:'#34d399', O:'#047857', L:'#a7f3d0', ears:'pointy', belly:true,  face:'standard', extra:'Dragon' },
+  Penguin: { B:'#1e293b', O:'#0f172a', L:'#ffffff', ears:'none',   belly:false, face:'beak',     extra:'Penguin' },
+  Hamster: { B:'#fbbf24', O:'#d97706', L:'#fef3c7', ears:'round',  belly:true,  face:'standard' },
+  Frog:    { B:'#22c55e', O:'#15803d', L:'#bbf7d0', ears:'none',   belly:true,  face:'wide' },
+  Fox:     { B:'#f97316', O:'#c2410c', L:'#ffffff', ears:'pointy', belly:false, face:'standard', extra:'Fox' },
+  Bear:    { B:'#a16207', O:'#78350f', L:'#fbbf24', ears:'round',  belly:true,  face:'standard' },
+  Duck:    { B:'#fbbf24', O:'#d97706', L:'#fef3c7', ears:'none',   belly:true,  face:'bill' },
+  Unicorn: { B:'#ffffff', O:'#e5e7eb', L:'#fce7f3', ears:'pointy', belly:true,  face:'standard', extra:'Unicorn', rare:true },
+};
+
+// --- Grid helpers ---
+function mergeGrids(base, overlay) {
+  if (!overlay) return base.map(r => r);
+  const result = base.map(r => r.split(''));
+  for (let y = 0; y < GRID; y++) {
+    for (let x = 0; x < GRID; x++) {
+      const ch = overlay[y]?.[x];
+      if (ch && ch !== '.') result[y][x] = ch;
+    }
+  }
+  return result.map(r => r.join(''));
+}
+
+// --- Pet Animator ---
+class PetAnimator {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.ctx.imageSmoothingEnabled = false;
+    this.species = 'Cat';
+    this.expr = 'normal';
+    this.isEgg = false;
+    this.isDead = false;
+    this.isSleeping = false;
+    this.eggTaps = 0;
+    this.happyTimer = null;
+    this.blinkTimer = null;
+  }
+
+  setState(opts) {
+    this.species = opts.species || this.species;
+    this.isEgg = !!opts.egg;
+    this.isDead = !!opts.dead;
+    this.isSleeping = !!opts.sleeping;
+    this.eggTaps = opts.eggTaps || 0;
+    this._updateExpr();
+    this.render();
+    if (!this.isEgg && !this.isDead) this.startBlinking();
+    else this.stopBlinking();
+  }
+
+  triggerHappy() {
+    if (this.isEgg || this.isDead) return;
+    this.expr = 'happy';
+    this.render();
+    clearTimeout(this.happyTimer);
+    this.happyTimer = setTimeout(() => { this._updateExpr(); this.render(); }, 2000);
+  }
+
+  _updateExpr() {
+    if (this.isDead) this.expr = 'dead';
+    else if (this.isSleeping) this.expr = 'sleep';
+    else this.expr = 'normal';
+  }
+
+  startBlinking() {
+    this.stopBlinking();
+    const blink = () => {
+      if (this.expr === 'normal') {
+        this.expr = 'blink';
+        this.render();
+        setTimeout(() => { this._updateExpr(); this.render(); }, 150);
+      }
+      this.blinkTimer = setTimeout(blink, 2500 + Math.random() * 2500);
+    };
+    this.blinkTimer = setTimeout(blink, 2500 + Math.random() * 2500);
+  }
+  stopBlinking() { clearTimeout(this.blinkTimer); this.blinkTimer = null; }
+
+  _buildGrid() {
+    if (this.isEgg) {
+      let g = mergeGrids(EGG_BODY, EGG_FACE);
+      if (this.eggTaps >= 1) g = mergeGrids(g, CRACK_1);
+      if (this.eggTaps >= 2) g = mergeGrids(g, CRACK_2);
+      return g;
+    }
+    const cfg = SPECIES[this.species] || SPECIES.Cat;
+    let g = mergeGrids(BODY);
+    g = mergeGrids(g, EARS[cfg.ears]);
+    if (cfg.belly) g = mergeGrids(g, BELLY);
+    if (cfg.extra && EXTRAS[cfg.extra]) g = mergeGrids(g, EXTRAS[cfg.extra]);
+    const faceSet = FACE_SETS[cfg.face] || FACE;
+    g = mergeGrids(g, faceSet[this.expr] || faceSet.normal);
+    return g;
+  }
+
+  _palette() {
+    if (this.isEgg) return { O:'#b45309', B:'#fde68a', E:'#5a3e2b', W:'#fff', P:'#f9a8d4', M:'#5a3e2b', C:'#b45309' };
+    const c = SPECIES[this.species] || SPECIES.Cat;
+    return { O:c.O, B:c.B, L:c.L, E:EYE, W:SHINE, P:BLUSH, M:MOUTH, N:BEAK, H:HORN, S:SPARKLE, R:MANE, C:c.O };
+  }
+
+  render() {
+    const grid = this._buildGrid();
+    const pal = this._palette();
+    const ctx = this.ctx, s = SCALE;
+    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    for (let y = 0; y < GRID; y++) {
+      for (let x = 0; x < GRID; x++) {
+        const col = pal[grid[y][x]];
+        if (col) { ctx.fillStyle = col; ctx.fillRect(x*s, y*s, s, s); }
+      }
+    }
+  }
+}
+
+// ============================================================
+//  GAME LOGIC
+// ============================================================
+const POLL_INTERVAL = 5000, WANDER_INTERVAL = 4000;
+let pollTimer = null, wanderTimer = null;
+let isAlive = false, isHatched = false;
+const animator = new PetAnimator(document.getElementById('petCanvas'));
+
+function statColor(v) { return v > 60 ? '#00b894' : v > 30 ? '#fdcb6e' : '#d63031'; }
+
+function renderState(state) {
+  if (!state || state.error) { if (state?.error) showMessage(state.error, 'error'); return; }
+  isAlive = state.alive;
+  isHatched = state.hatched;
+  const wrap = document.getElementById('petWrap');
+  const poop = document.getElementById('poopIndicator');
+  const zzz = document.getElementById('zzz');
+  const sickBadge = document.getElementById('sickBadge');
+  const rareBadge = document.getElementById('rareBadge');
+  const title = document.getElementById('petTitle');
+  const eggHint = document.getElementById('eggHint');
+  const statsGrid = document.getElementById('statsGrid');
+
+  // Animator
+  animator.setState({
+    species: state.species_name,
+    egg: !state.hatched,
+    dead: !state.alive,
+    sleeping: state.sleeping,
+    eggTaps: state.taps_current || 0,
+  });
+
+  // Hatch pop
+  if (state.just_hatched) {
+    wrap.classList.add('hatch-pop');
+    setTimeout(() => wrap.classList.remove('hatch-pop'), 600);
+  }
+
+  // CSS classes
+  wrap.className = 'pet-wrap';
+  if (!state.alive) wrap.classList.add('dead');
+
+  // Indicators
+  poop.classList.toggle('hidden', !state.poop);
+  zzz.classList.toggle('hidden', !state.sleeping);
+  sickBadge.classList.toggle('hidden', !state.sick);
+  rareBadge.classList.toggle('hidden', !state.rare);
+
+  // Title
+  title.textContent = !state.alive ? `${state.name} has passed... 💀`
+    : !state.hatched ? `${state.name}'s Egg`
+    : `${state.name} the ${state.stage_name}`;
+
+  // Egg hint
+  if (!state.hatched) {
+    eggHint.classList.remove('hidden');
+    statsGrid.style.opacity = '0.3';
+    renderTapDots(state.taps_current || 0, state.taps_needed || 3);
+  } else {
+    eggHint.classList.add('hidden');
+    statsGrid.style.opacity = '1';
+  }
+
+  // Stats
+  setBar('hungerBar', state.hunger);
+  setBar('happinessBar', state.happiness);
+  setBar('energyBar', state.energy);
+  setBar('healthBar', state.health);
+
+  document.getElementById('ageDisplay').textContent = `Age: ${state.age_display || '—'}`;
+  let stageText = `Stage: ${state.stage_name || '—'}`;
+  if (state.species_name) stageText = `${state.species_name} — ${state.stage_name}`;
+  document.getElementById('stageDisplay').textContent = stageText;
+
+  // Buttons
+  const dead = !state.alive, egg = !state.hatched;
+  document.querySelectorAll('.btn').forEach(btn => {
+    btn.disabled = btn.classList.contains('btn-quit') ? false : (dead || egg);
+  });
+
+  // Wandering
+  if (state.hatched && state.alive && !state.sleeping) startWandering();
+  else { stopWandering(); wrap.style.left = '50%'; }
+}
+
+function renderTapDots(cur, need) {
+  const c = document.getElementById('tapProgress');
+  c.innerHTML = '';
+  for (let i = 0; i < need; i++) {
+    const d = document.createElement('div');
+    d.className = 'tap-dot' + (i < cur ? ' filled' : '');
+    c.appendChild(d);
+  }
+}
+function setBar(id, v) { const b = document.getElementById(id); b.style.width = `${v}%`; b.style.background = statColor(v); }
+function showMessage(msg, type = '') { const e = document.getElementById('message'); e.textContent = msg; e.className = 'message ' + type; }
+
+// --- Wandering ---
+function startWandering() {
+  if (wanderTimer) return;
+  wanderTimer = setInterval(wanderPet, WANDER_INTERVAL);
+  setTimeout(wanderPet, 800);
+}
+function stopWandering() { if (wanderTimer) { clearInterval(wanderTimer); wanderTimer = null; } }
+function wanderPet() {
+  const wrap = document.getElementById('petWrap');
+  if (!wrap || wrap.classList.contains('dead')) return;
+  wrap.style.left = `${12 + Math.random() * 76}%`;
+  if (Math.random() < 0.35) { wrap.classList.add('bouncing'); setTimeout(() => wrap.classList.remove('bouncing'), 300); }
+}
+
+// --- Egg tap ---
+async function tapEgg() {
+  if (isHatched) return;
+  const wrap = document.getElementById('petWrap');
+  wrap.classList.add('egg-shake');
+  setTimeout(() => wrap.classList.remove('egg-shake'), 400);
+  const state = await callAction('tap_egg');
+  if (state && !state.error) {
+    renderState(state);
+    if (state.just_hatched) {
+      const rareTag = state.rare ? ' ⭐ RARE!' : '';
+      showMessage(`🎉 ${state.name} hatched into a ${state.species_name}!${rareTag}`, 'success');
+      startPolling();
+    } else {
+      showMessage(`Tap ${state.taps_current}/${state.taps_needed}... keep tapping! 🥚`, '');
+    }
+  }
+}
+
+// --- Actions ---
+async function callAction(name, params = {}) {
+  try { return await window.omnideck.invoke(name, params); }
+  catch (e) { return { error: e.message || 'Action failed' }; }
+}
+async function refreshState() {
+  const state = await callAction('get_state');
+  if (state && !state.error) renderState(state);
+  else if (state?.error) { stopPolling(); showCreateScreen(); }
+}
+async function createPet() {
+  const name = document.getElementById('petName').value.trim() || 'Pixel';
+  const state = await callAction('create_pet', { name });
+  if (state && !state.error) {
+    showGameScreen(); renderState(state);
+    showMessage(`${state.name}'s egg was laid! Tap it to hatch! 🥚`, 'success');
+  } else showMessage(state.error || 'Failed', 'error');
+}
+async function doAction(actionName) {
+  document.querySelectorAll('.btn').forEach(b => { if (!b.classList.contains('btn-quit')) b.disabled = true; });
+  const state = await callAction(actionName);
+  if (state && !state.error) {
+    renderState(state);
+    if (actionName === 'feed' || actionName === 'play') animator.triggerHappy();
+    const msgs = {
+      feed: `${state.name} enjoyed the meal! 🍖`, play: `${state.name} had so much fun! 🎮`,
+      cleanup: `All clean! ${state.name} is happy! ✨`, medicine: `${state.name} feels better! 💊`,
+      toggle_sleep: state.sleeping ? `${state.name} fell asleep... 😴` : `${state.name} woke up! ⭐`,
+    };
+    showMessage(msgs[actionName] || 'Done!', 'success');
+  } else {
+    showMessage(state.error || 'Something went wrong', 'error');
+    document.querySelectorAll('.btn').forEach(b => { if (!b.classList.contains('btn-quit')) b.disabled = false; });
+  }
+}
+async function quitPet() {
+  if (!confirm('Quit this pet? It will be gone forever and you can start a new egg.')) return;
+  stopPolling(); stopWandering(); await callAction('reset');
+  isAlive = false; isHatched = false; showCreateScreen();
+  document.getElementById('petName').value = 'Pixel';
+}
+
+function showCreateScreen() {
+  document.getElementById('createScreen').classList.remove('hidden');
+  document.getElementById('gameScreen').classList.add('hidden');
+  document.querySelectorAll('.btn').forEach(b => b.disabled = true);
+}
+function showGameScreen() {
+  document.getElementById('createScreen').classList.add('hidden');
+  document.getElementById('gameScreen').classList.remove('hidden');
+  document.querySelectorAll('.btn').forEach(b => b.disabled = false);
+}
+function startPolling() {
+  stopPolling();
+  pollTimer = setInterval(async () => {
+    await refreshState();
+    if (isAlive && isHatched) { const s = await callAction('check_poop'); if (s && !s.error) renderState(s); }
+  }, POLL_INTERVAL);
+}
+function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
+
+// --- Click on pet ---
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('petWrap').addEventListener('click', () => {
+    if (!isHatched && isAlive) tapEgg();
+    else if (isHatched && isAlive) {
+      const w = document.getElementById('petWrap');
+      w.classList.add('bouncing'); setTimeout(() => w.classList.remove('bouncing'), 300);
+    }
+  });
+});
+
+// --- Init ---
+(async function init() {
+  const state = await callAction('get_state');
+  if (state && !state.error && state.alive !== undefined) { showGameScreen(); renderState(state); startPolling(); }
+  else showCreateScreen();
+})();
+</script>
+</body>
+</html>
