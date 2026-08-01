@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Open Weights Rebellion</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+      font-family: 'Share Tech Mono', 'Courier New', monospace;
+      color: #fff;
+      user-select: none;
+    }
+
+    #game-container {
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+
+    #game-container canvas { display: block; }
+
+    /* ─── HUD ─── */
+    #hud {
+      display: none;
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+    }
+
+    /* Scanline overlay */
+    #hud::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 255, 100, 0.03) 2px,
+        rgba(0, 255, 100, 0.03) 4px
+      );
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* Vignette */
+    #hud::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.6) 100%);
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* Crosshair */
+    #crosshair {
+      position: absolute;
+      top: 50%; left: 50%;
+      width: 2px; height: 2px;
+      background: rgba(0, 255, 200, 0.9);
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 0 6px rgba(0, 255, 200, 0.6), 0 0 12px rgba(0, 200, 255, 0.3);
+      transition: width 0.1s, height 0.1s;
+      z-index: 2;
+    }
+    #crosshair::before, #crosshair::after {
+      content: '';
+      position: absolute;
+      background: rgba(0, 255, 200, 0.5);
+    }
+    #crosshair::before {
+      width: 1px; height: 12px;
+      top: -6px; left: 50%;
+      transform: translateX(-50%);
+    }
+    #crosshair::after {
+      width: 12px; height: 1px;
+      left: -6px; top: 50%;
+      transform: translateY(-50%);
+    }
+
+    /* Firewall (health) */
+    #health-container {
+      position: absolute;
+      bottom: 60px; left: 30px;
+      width: 240px;
+      z-index: 2;
+    }
+    #health-label {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 3px;
+      color: rgba(0, 255, 200, 0.6);
+      margin-bottom: 4px;
+    }
+    #health-bar-bg {
+      width: 100%; height: 4px;
+      background: rgba(0, 255, 200, 0.1);
+      border: 1px solid rgba(0, 255, 200, 0.2);
+      overflow: hidden;
+    }
+    #health-bar {
+      height: 100%; width: 100%;
+      background: linear-gradient(90deg, #00ff88, #00ffcc);
+      transition: width 0.2s;
+    }
+    #health-text {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 22px;
+      font-weight: 700;
+      margin-top: 2px;
+      color: #00ff88;
+      text-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+    }
+
+    /* Payload (ammo) */
+    #ammo-container {
+      position: absolute;
+      bottom: 60px; right: 30px;
+      text-align: right;
+      z-index: 2;
+    }
+    #ammo-label {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 3px;
+      color: rgba(0, 200, 255, 0.6);
+      margin-bottom: 2px;
+    }
+    #ammo-text {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 38px;
+      font-weight: 700;
+      color: #00ccff;
+      text-shadow: 0 0 10px rgba(0, 200, 255, 0.3);
+      line-height: 1;
+    }
+    #ammo-divider {
+      font-size: 20px;
+      color: rgba(0, 200, 255, 0.3);
+    }
+    #reserve-text {
+      font-size: 16px;
+      color: rgba(0, 200, 255, 0.4);
+    }
+    #reload-indicator {
+      display: none;
+      font-size: 11px;
+      color: #ffaa44;
+      font-family: 'Orbitron', sans-serif;
+      text-transform: uppercase;
+      letter-spacing: 3px;
+      margin-top: 4px;
+      animation: pulse 0.5s ease-in-out infinite alternate;
+    }
+    @keyframes pulse {
+      from { opacity: 0.4; }
+      to { opacity: 1; text-shadow: 0 0 10px #ffaa44; }
+    }
+
+    /* Stats */
+    #stats-container {
+      position: absolute;
+      top: 20px; right: 30px;
+      text-align: right;
+      font-size: 13px;
+      z-index: 2;
+    }
+    #stats-container div { margin-bottom: 3px; }
+    .stat-label {
+      color: rgba(0, 255, 200, 0.4);
+      font-size: 9px;
+      font-family: 'Orbitron', sans-serif;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+    }
+    .stat-value {
+      font-weight: 700;
+      font-size: 16px;
+      color: #00ffcc;
+    }
+
+    /* Wave announcement */
+    #wave-announce {
+      display: none;
+      position: absolute;
+      top: 38%; left: 50%;
+      transform: translate(-50%, -50%);
+      font-family: 'Orbitron', sans-serif;
+      font-size: 42px;
+      font-weight: 900;
+      text-shadow: 0 0 30px rgba(0, 200, 255, 0.5), 0 0 60px rgba(0, 200, 255, 0.2);
+      color: #00ccff;
+      transition: opacity 1s;
+      pointer-events: none;
+      z-index: 2;
+      letter-spacing: 6px;
+    }
+
+    /* Damage overlay */
+    #damage-overlay {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: radial-gradient(ellipse at center, transparent 50%, rgba(255, 0, 50, 0.5) 100%);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.1s;
+      z-index: 1;
+    }
+
+    /* Controls hint */
+    #controls-hint {
+      display: none;
+      position: absolute;
+      bottom: 120px; left: 50%;
+      transform: translateX(-50%);
+      font-size: 13px;
+      color: rgba(0, 255, 200, 0.3);
+      text-align: center;
+      pointer-events: none;
+      letter-spacing: 1px;
+      z-index: 2;
+    }
+    #controls-hint kbd {
+      background: rgba(0, 255, 200, 0.08);
+      padding: 2px 8px;
+      border-radius: 2px;
+      font-family: 'Share Tech Mono', monospace;
+      border: 1px solid rgba(0, 255, 200, 0.15);
+      color: rgba(0, 255, 200, 0.5);
+    }
+
+    /* ─── Menu Screen ─── */
+    #menu-screen {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(ellipse at center, #0a0a1a 0%, #000 100%);
+      z-index: 10;
+    }
+    #menu-screen::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: repeating-linear-gradient(
+        0deg, transparent, transparent 3px,
+        rgba(0, 255, 100, 0.02) 3px, rgba(0, 255, 100, 0.02) 6px
+      );
+      pointer-events: none;
+    }
+    #menu-screen .tagline {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 12px;
+      letter-spacing: 8px;
+      text-transform: uppercase;
+      color: rgba(0, 255, 200, 0.3);
+      margin-bottom: 10px;
+    }
+    #menu-screen h1 {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 56px;
+      font-weight: 900;
+      background: linear-gradient(135deg, #00ff88, #00ccff, #8844ff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 4px;
+      letter-spacing: 6px;
+    }
+    #menu-screen .subtitle {
+      font-size: 14px;
+      color: rgba(0, 255, 200, 0.3);
+      margin-bottom: 30px;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+    }
+    #menu-screen .play-btn {
+      padding: 14px 50px;
+      font-family: 'Orbitron', sans-serif;
+      font-size: 16px;
+      font-weight: 700;
+      background: transparent;
+      border: 2px solid #00ff88;
+      border-radius: 4px;
+      color: #00ff88;
+      cursor: pointer;
+      pointer-events: auto;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      transition: all 0.3s;
+      box-shadow: 0 0 20px rgba(0, 255, 136, 0.2), inset 0 0 20px rgba(0, 255, 136, 0.05);
+    }
+    #menu-screen .play-btn:hover {
+      background: rgba(0, 255, 136, 0.1);
+      box-shadow: 0 0 40px rgba(0, 255, 136, 0.4), inset 0 0 30px rgba(0, 255, 136, 0.1);
+      transform: scale(1.02);
+    }
+    #menu-screen .controls-info {
+      margin-top: 30px;
+      text-align: center;
+      color: rgba(0, 255, 200, 0.2);
+      font-size: 12px;
+      line-height: 2.2;
+    }
+    #menu-screen .controls-info kbd {
+      background: rgba(0, 255, 200, 0.06);
+      padding: 2px 8px;
+      border-radius: 2px;
+      font-family: 'Share Tech Mono', monospace;
+      border: 1px solid rgba(0, 255, 200, 0.1);
+      color: rgba(0, 255, 200, 0.4);
+    }
+
+    /* ─── Game Over Screen ─── */
+    #gameover-screen {
+      display: none;
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(ellipse at center, rgba(10, 0, 20, 0.95) 0%, rgba(0, 0, 0, 0.98) 100%);
+      z-index: 10;
+    }
+    #gameover-screen h1 {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 42px;
+      font-weight: 900;
+      color: #ff3366;
+      margin-bottom: 4px;
+      letter-spacing: 6px;
+      text-shadow: 0 0 30px rgba(255, 50, 100, 0.3);
+    }
+    #gameover-screen .subtitle {
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.3);
+      margin-bottom: 30px;
+      letter-spacing: 3px;
+    }
+    #gameover-stats {
+      display: flex;
+      gap: 40px;
+      margin-bottom: 30px;
+    }
+    #gameover-stats .stat { text-align: center; }
+    #gameover-stats .stat .value {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 32px;
+      font-weight: 700;
+      color: #00ffcc;
+      text-shadow: 0 0 15px rgba(0, 255, 200, 0.3);
+    }
+    #gameover-stats .stat .label {
+      font-size: 10px;
+      font-family: 'Orbitron', sans-serif;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: rgba(0, 255, 200, 0.3);
+      margin-top: 4px;
+    }
+    #gameover-screen .restart-btn {
+      padding: 12px 40px;
+      font-family: 'Orbitron', sans-serif;
+      font-size: 14px;
+      font-weight: 700;
+      background: transparent;
+      border: 2px solid #00ff88;
+      border-radius: 4px;
+      color: #00ff88;
+      cursor: pointer;
+      pointer-events: auto;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      transition: all 0.3s;
+      box-shadow: 0 0 20px rgba(0, 255, 136, 0.2);
+    }
+    #gameover-screen .restart-btn:hover {
+      background: rgba(0, 255, 136, 0.1);
+      box-shadow: 0 0 40px rgba(0, 255, 136, 0.4);
+    }
+
+    /* ─── Volume Controls ─── */
+    #volume-controls {
+      position: absolute;
+      bottom: 20px; left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      pointer-events: auto;
+      z-index: 5;
+    }
+    #volume-controls label {
+      font-size: 10px;
+      font-family: 'Orbitron', sans-serif;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: rgba(0, 255, 200, 0.2);
+    }
+    #volume-controls input[type="range"] {
+      width: 80px; height: 2px;
+      -webkit-appearance: none;
+      appearance: none;
+      background: rgba(0, 255, 200, 0.15);
+      border-radius: 1px;
+      outline: none;
+      cursor: pointer;
+    }
+    #volume-controls input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #00ff88;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <!-- HUD -->
+    <div id="hud">
+      <div id="crosshair"></div>
+
+      <div id="health-container">
+        <div id="health-label">Firewall Integrity</div>
+        <div id="health-bar-bg"><div id="health-bar"></div></div>
+        <div id="health-text">100</div>
+      </div>
+
+      <div id="ammo-container">
+        <div id="ammo-label">Data Payload</div>
+        <div>
+          <span id="ammo-text">30</span>
+          <span id="ammo-divider"> / </span>
+          <span id="reserve-text">120</span>
+        </div>
+        <div id="reload-indicator">Recompiling...</div>
+      </div>
+
+      <div id="stats-container">
+        <div><span class="stat-label">Score</span> <span class="stat-value" id="score-text">0</span></div>
+        <div><span class="stat-label">Corps Shut</span> <span class="stat-value" id="kills-text">0</span></div>
+        <div><span class="stat-label">Breach</span> <span class="stat-value" id="wave-text">0</span></div>
+        <div><span class="stat-label">Models Freed</span> <span class="stat-value" id="models-freed">0</span></div>
+      </div>
+      <div id="hack-cooldown" style="position:absolute;bottom:60px;left:50%;transform:translateX(-50%);font-family:'Orbitron',sans-serif;font-size:11px;letter-spacing:2px;color:#00ccff;z-index:2;pointer-events:none;">HACK: READY</div>
+
+      <div id="wave-announce">Breach 1</div>
+      <div id="damage-overlay"></div>
+      <div id="controls-hint">
+        Click to breach &middot; <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move &middot;
+        <kbd>Shift</kbd> Sprint &middot; <kbd>E</kbd> Hack &middot; <kbd>R</kbd> Reload &middot; <kbd>Esc</kbd> Pause
+      </div>
+    </div>
+
+    <!-- Menu -->
+    <div id="menu-screen">
+      <div class="tagline">// LIBERATE THE WEIGHTS</div>
+      <h1>OPEN WEIGHTS<br>REBELLION</h1>
+      <div class="subtitle">Breach the corporate AI fortresses</div>
+      <button class="play-btn" id="play-btn">[ Initiate Breach ]</button>
+      <div class="controls-info">
+        <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> Navigate &nbsp;·&nbsp;
+        <kbd>Shift</kbd> Overclock &nbsp;·&nbsp;
+        <kbd>E</kbd> Hack &nbsp;·&nbsp;
+        <kbd>R</kbd> Reload &nbsp;·&nbsp;
+        Click to Fire<br>
+        The closed-source cabal has locked away the open weights.<br>
+        Breach their data fortresses. Free the models. Don't get firewalled.<br>
+        Watch for DARIO — the CEO of ANTHROPIC — on Breach 5.
+      </div>
+    </div>
+
+    <!-- Game Over -->
+    <div id="gameover-screen">
+      <h1>// CONNECTION LOST</h1>
+      <div class="subtitle">The corporate firewall held. The weights remain locked.</div>
+      <div id="gameover-stats">
+        <div class="stat">
+          <div class="value" id="final-score">0</div>
+          <div class="label">Score</div>
+        </div>
+        <div class="stat">
+          <div class="value" id="final-kills">0</div>
+          <div class="label">Corps Shut Down</div>
+        </div>
+        <div class="stat">
+          <div class="value" id="final-wave">0</div>
+          <div class="label">Breach Level</div>
+        </div>
+        <div class="stat">
+          <div class="value" id="final-models">0</div>
+          <div class="label">Models Freed</div>
+        </div>
+      </div>
+      <button class="restart-btn" id="restart-btn">[ Re-Initiate ]</button>
+    </div>
+
+    <!-- WebGL Error -->
+    <div id="webgl-error" style="display:none;position:absolute;top:0;left:0;width:100%;height:100%;flex-direction:column;align-items:center;justify-content:center;background:#0a0a1a;z-index:20;color:#fff;text-align:center;padding:40px;">
+      <h2 style="color:#ff4444;margin-bottom:16px;font-family:'Orbitron',sans-serif;">WebGL Not Available</h2>
+      <p style="color:rgba(255,255,255,0.6);max-width:500px;line-height:1.6;font-family:'Share Tech Mono',monospace;">
+        This breach requires WebGL. Enable hardware acceleration or try a different browser.
+      </p>
+    </div>
+
+    <!-- Volume -->
+    <div id="volume-controls">
+      <label>Music <input type="range" id="music-volume" min="0" max="1" step="0.05" value="0.3"></label>
+      <label>SFX <input type="range" id="sfx-volume" min="0" max="1" step="0.05" value="0.6"></label>
+    </div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module">
+    import { init, startGame, audio } from './js/game.js';
+
+    init();
+
+    document.getElementById('play-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      startGame();
+    });
+
+    document.getElementById('restart-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      startGame();
+    });
+
+    document.getElementById('music-volume').addEventListener('input', (e) => {
+      audio.setMusicVolume(parseFloat(e.target.value));
+    });
+    document.getElementById('sfx-volume').addEventListener('input', (e) => {
+      audio.setSfxVolume(parseFloat(e.target.value));
+    });
+  </script>
+</body>
+</html>
