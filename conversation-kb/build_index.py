@@ -24,8 +24,8 @@ from datetime import datetime
 CONV_DIR = "/var/lib/omnideck/conversations"
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "kb.db")
 OLLAMA_URL = "http://localhost:11434/api/embed"
-EMBED_MODEL = "nomic-embed-text"
-EMBED_DIM = 768
+EMBED_MODEL = "qwen3-embedding:8b"
+EMBED_DIM = 4096
 
 # ─── Database Setup ───────────────────────────────────────────────
 
