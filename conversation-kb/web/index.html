@@ -368,22 +368,75 @@
         .match-text {
             font-size: 0.8rem;
             color: var(--text-muted);
-            line-height: 1.4;
+            line-height: 1.5;
             margin-top: 4px;
-            max-height: 60px;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
             overflow: hidden;
-            position: relative;
+            word-break: break-word;
         }
 
-        .match-text::after {
-            content: '';
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            height: 15px;
-            background: linear-gradient(transparent, var(--bg));
+        .match-text mark {
+            background: rgba(210, 153, 34, 0.3);
+            color: var(--warning);
+            border-radius: 2px;
+            padding: 0 2px;
         }
+
+        /* Failure pattern cards */
+        .failure-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-left: 3px solid var(--warning);
+            border-radius: var(--radius);
+            padding: 14px 16px;
+            margin-bottom: 12px;
+        }
+
+        .failure-pattern-text {
+            font-size: 0.9rem;
+            color: var(--text);
+            line-height: 1.5;
+            margin-bottom: 10px;
+        }
+
+        .failure-recovery {
+            background: rgba(63, 185, 80, 0.08);
+            border: 1px solid rgba(63, 185, 80, 0.2);
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-size: 0.85rem;
+            color: var(--success);
+            line-height: 1.5;
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+        }
+
+        .failure-recovery i {
+            margin-top: 2px;
+            flex-shrink: 0;
+        }
+
+        .failure-meta {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+        }
+
+        .failure-badge {
+            display: inline-block;
+            border-radius: 4px;
+            padding: 2px 8px;
+            font-size: 0.7rem;
+            font-weight: 500;
+        }
+
+        .badge-warn { background: rgba(210, 153, 34, 0.15); color: var(--warning); }
+        .badge-freq { background: var(--bg); border: 1px solid var(--border); color: var(--text-muted); }
+        .badge-type { background: var(--bg); border: 1px solid var(--border); color: var(--text-muted); }
 
         /* Tabs */
         .tabs {
@@ -621,6 +674,7 @@
         <div class="tabs">
             <button class="tab active" onclick="switchTab('search')">🔍 Search</button>
             <button class="tab" onclick="switchTab('skills')">📋 Skills <span id="skills-count-badge" style="opacity:0.5"></span></button>
+            <button class="tab" onclick="switchTab('failures')">⚠️ Failures <span id="failures-count-badge" style="opacity:0.5"></span></button>
         </div>
 
         <div id="tab-search" class="tab-content active">
@@ -634,8 +688,12 @@
 
         <div id="tab-skills" class="tab-content">
             <div class="process-bar" id="skill-process-bar">
-                <button id="process-skills-btn" onclick="processSkills()">⚡ Extract Skills</button>
+                <button id="process-skills-btn" onclick="processSkills()" style="display:none">⚡ Extract Skills</button>
                 <span class="process-info" id="skill-process-info">Loading...</span>
+            </div>
+            <div class="search-box" style="margin-bottom: 12px;">
+                <i class="bi bi-search"></i>
+                <input type="text" id="skill-search-input" placeholder="Search skills by meaning..." autocomplete="off">
             </div>
             <div class="filter-bar" id="skill-filters">
                 <button class="filter-btn active" onclick="filterSkills('')">All</button>
@@ -649,6 +707,18 @@
                 <div class="empty-state">
                     <i class="bi bi-clipboard-check"></i>
                     <p>Loading skills...</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-failures" class="tab-content">
+            <div class="process-bar">
+                <span class="process-info" id="failure-process-info">Loading...</span>
+            </div>
+            <div id="failures-container">
+                <div class="empty-state">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <p>Loading failure patterns...</p>
                 </div>
             </div>
         </div>
@@ -780,19 +850,33 @@
                     return;
                 }
 
-                const resultsHtml = result.results.map(r => {
+                // Score threshold: hide results below 10%
+                const MIN_SCORE = 0.10;
+                const filtered = result.results.filter(r => r.score >= MIN_SCORE);
+
+                if (filtered.length === 0) {
+                    resultsContainer.innerHTML = `
+                        <div class="empty-state">
+                            <i class="bi bi-emoji-frown"></i>
+                            <p>No strong matches found for "${query}" (best was ${(result.results[0].score * 100).toFixed(0)}%)</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                const resultsHtml = filtered.map(r => {
                     const matchesHtml = r.matches.map((m, i) => `
                         <div class="match-snippet" onclick="event.stopPropagation(); viewConversation('${r.conversation_id}')">
                             <span class="match-badge">${m.chunk_type.replace('_', ' ')}</span>
                             <span class="match-score">${(m.score * 100).toFixed(0)}%</span>
-                            <div class="match-text">${escapeHtml(m.chunk_text)}</div>
+                            <div class="match-text">${highlightText(m.chunk_text, query)}</div>
                         </div>
                     `).join('');
                     return `
                         <div class="result-card" onclick="viewConversation('${r.conversation_id}')">
                             <div class="result-header">
                                 <div>
-                                    <div class="result-title">${escapeHtml(r.title)}</div>
+                                    <div class="result-title">${highlightText(r.title, query)}</div>
                                     <div class="result-meta">${r.date} · ${r.match_count} match${r.match_count !== 1 ? 'es' : ''}</div>
                                 </div>
                                 <div class="result-similarity">${(r.score * 100).toFixed(1)}%</div>
@@ -802,9 +886,15 @@
                     `;
                 }).join('');
 
+                const hiddenCount = result.results.length - filtered.length;
+                const headerParts = [`${filtered.length} results from ${result.total_chunks_searched} chunks`];
+                if (hiddenCount > 0) {
+                    headerParts.push(`(${hiddenCount} below threshold)`);
+                }
+
                 resultsContainer.innerHTML = `
                     <div class="results-header">
-                        ${result.results.length} results from ${result.total_chunks_searched} chunks
+                        ${headerParts.join(' ')}
                     </div>
                     ${resultsHtml}
                 `;
@@ -823,7 +913,7 @@
             `;
 
             try {
-                const conv = await window.omnideck.invoke('get_conversation', { conversation_id: convId });
+                const conv = await window.omnideck.invoke('get_conversation', { conversation_id: convId, max_trajectory_chars: 15000 });
                 
                 if (conv.error) {
                     resultsContainer.innerHTML = `<div class="error-msg">${conv.error}</div>`;
@@ -839,6 +929,14 @@
                     .replace(/RESPONSE:/g, '<span class="response">RESPONSE:</span>')
                     .replace(/RESULT\(/g, '<span class="result">RESULT(');
 
+                const truncNotice = conv.trajectory_truncated
+                    ? `<div class="error-msg" style="margin-bottom: 12px;">
+                        <i class="bi bi-info-circle"></i>
+                        Trajectory truncated to 15,000 chars (full: ${(conv.trajectory_chars || 0).toLocaleString()} chars).
+                        Read the full events.jsonl at <code>${escapeHtml(conv.events_path || '')}</code>
+                       </div>`
+                    : '';
+
                 resultsContainer.innerHTML = `
                     <div class="conversation-detail">
                         <div class="detail-header">
@@ -849,12 +947,14 @@
                                     <span><i class="bi bi-lightning"></i> ${conv.num_tool_calls} tool calls</span>
                                     <span><i class="bi bi-chat"></i> ${conv.num_user_msgs} user messages</span>
                                     <span><i class="bi bi-file-text"></i> ~${conv.est_tokens.toLocaleString()} tokens</span>
+                                    <span><i class="bi bi-arrows-collapse"></i> ${(conv.trajectory_chars || 0).toLocaleString()} chars</span>
                                 </div>
                             </div>
                             <button class="back-btn" onclick="backToSearch()">
                                 <i class="bi bi-arrow-left"></i> Back
                             </button>
                         </div>
+                        ${truncNotice}
                         <div class="trajectory">${trajectoryHtml}</div>
                     </div>
                 `;
@@ -884,6 +984,18 @@
             return div.innerHTML;
         }
 
+        // Highlight query terms in text: wrap matches in <mark>
+        function highlightText(text, query) {
+            const escaped = escapeHtml(text);
+            if (!query || query.length < 2) return escaped;
+            // Extract significant words (3+ chars) from the query
+            const words = query.toLowerCase().match(/\b\w{3,}\b/g) || [];
+            if (words.length === 0) return escaped;
+            // Create a regex that matches any of the words (case-insensitive)
+            const pattern = new RegExp('(' + words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')', 'gi');
+            return escaped.replace(pattern, '<mark>$1</mark>');
+        }
+
         // Initialize
         loadStats();
         searchInput.focus();
@@ -898,6 +1010,8 @@
             
             if (tabName === 'skills') {
                 loadSkills();
+            } else if (tabName === 'failures') {
+                loadFailures();
             }
         }
 
@@ -905,59 +1019,116 @@
 
         let currentSkillFilter = '';
         let skillsLoaded = false;
+        let skillSearchTimer = null;
+
+        // Skill search input handler
+        document.getElementById('skill-search-input').addEventListener('input', (e) => {
+            clearTimeout(skillSearchTimer);
+            const query = e.target.value.trim();
+            skillSearchTimer = setTimeout(() => {
+                if (query.length >= 2) {
+                    searchSkills(query);
+                } else {
+                    loadSkills();
+                }
+            }, 300);
+        });
+
+        async function searchSkills(query) {
+            const container = document.getElementById('skills-container');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Searching skills...</p></div>';
+            
+            try {
+                const result = await window.omnideck.invoke('search_skills', { query, limit: 20 });
+                
+                if (result.error) {
+                    container.innerHTML = `<div class="error-msg">${result.error}</div>`;
+                    return;
+                }
+                
+                if (!result.results || result.results.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <i class="bi bi-emoji-frown"></i>
+                            <p>No skills found for "${escapeHtml(query)}"</p>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                container.innerHTML = `
+                    <div class="results-header">
+                        ${result.results.length} skills matching "${escapeHtml(query)}" (from ${result.total_skills_searched} total)
+                    </div>
+                    ${result.results.map(s => {
+                        const typeClass = `badge-${(s.task_type || 'other').split(' ')[0]}`;
+                        const diffClass = `badge-${s.difficulty || 'medium'}`;
+                        return `
+                            <div class="skill-card" onclick="viewConsolidatedSkill(${s.skill_id})">
+                                <div class="skill-header">
+                                    <div>
+                                        <div class="skill-title">${escapeHtml(s.skill_title)}</div>
+                                        <div class="skill-source">${escapeHtml(s.conv_title)} · ${s.date}</div>
+                                    </div>
+                                    <div class="skill-badges">
+                                        <span class="skill-badge ${typeClass}">${s.task_type || 'other'}</span>
+                                        <span class="skill-badge ${diffClass}">${s.difficulty || 'medium'}</span>
+                                        <span class="result-similarity">${(s.similarity * 100).toFixed(0)}%</span>
+                                    </div>
+                                </div>
+                                <div class="skill-problem">${escapeHtml(s.problem || '').substring(0, 200)}</div>
+                            </div>
+                        `;
+                    }).join('')}
+                `;
+            } catch (e) {
+                container.innerHTML = `<div class="error-msg">Search failed: ${e.message}</div>`;
+            }
+        }
 
         async function loadSkills() {
             const container = document.getElementById('skills-container');
             container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading skills...</p></div>';
             
             try {
-                // Load skill status
-                const status = await window.omnideck.invoke('get_skill_status');
-                const infoEl = document.getElementById('skill-process-info');
-                const btnEl = document.getElementById('process-skills-btn');
+                // Load consolidated skills
+                const data = await window.omnideck.invoke('list_consolidated_skills', { limit: 100 });
                 
-                infoEl.textContent = `${status.skills_extracted} extracted · ${status.pending} pending`;
-                btnEl.disabled = status.pending === 0;
-                if (status.pending === 0) {
-                    btnEl.textContent = '✓ All Extracted';
-                } else {
-                    btnEl.textContent = '⚡ Extract Skills';
-                }
+                // Update process bar
+                const status = await window.omnideck.invoke('get_extraction_status');
+                const infoEl = document.getElementById('skill-process-info');
+                infoEl.textContent = `${status.consolidated_skills} skills · ${status.failure_patterns} failure patterns · ${status.clusters} clusters`;
+                document.getElementById('process-skills-btn').style.display = 'none';
                 
                 // Update badge
                 const badge = document.getElementById('skills-count-badge');
-                badge.textContent = status.skills_extracted > 0 ? `(${status.skills_extracted})` : '';
-
-                // Load skills
-                const data = await window.omnideck.invoke('list_skills', { 
-                    task_type: currentSkillFilter, 
-                    sort: 'date', 
-                    limit: 100 
-                });
+                badge.textContent = status.consolidated_skills > 0 ? `(${status.consolidated_skills})` : '';
 
                 if (data.skills.length === 0) {
                     container.innerHTML = `
                         <div class="empty-state">
                             <i class="bi bi-clipboard-check"></i>
-                            <p>No skills extracted yet. Click "Extract Skills" to start.</p>
+                            <p>No consolidated skills yet. Run extraction.py to generate them.</p>
                         </div>
                     `;
                     return;
                 }
 
                 container.innerHTML = data.skills.map(s => {
-                    const typeClass = `badge-${s.task_type || 'other'}`;
+                    const typeClass = `badge-${(s.task_type || 'other').split(' ')[0]}`;
                     const diffClass = `badge-${s.difficulty || 'medium'}`;
+                    const fpCount = (s.failure_patterns || []).length;
                     return `
-                        <div class="skill-card" onclick="viewSkill('${s.conversation_id}')">
+                        <div class="skill-card" onclick="viewConsolidatedSkill(${s.id})">
                             <div class="skill-header">
                                 <div>
                                     <div class="skill-title">${escapeHtml(s.skill_title)}</div>
-                                    <div class="skill-source">From: ${escapeHtml(s.conv_title)} · ${s.date}</div>
+                                    <div class="skill-source">${(s.conversation_ids || []).length} conversations · ${fpCount} failure patterns</div>
                                 </div>
                                 <div class="skill-badges">
                                     <span class="skill-badge ${typeClass}">${s.task_type || 'other'}</span>
                                     <span class="skill-badge ${diffClass}">${s.difficulty || 'medium'}</span>
+                                    <span class="skill-badge badge-medium">★${s.reusability || '?'}</span>
                                 </div>
                             </div>
                             <div class="skill-problem">${escapeHtml(s.problem || '').substring(0, 200)}</div>
@@ -978,17 +1149,36 @@
             loadSkills();
         }
 
-        async function viewSkill(convId) {
+        async function viewConsolidatedSkill(skillId) {
             const container = document.getElementById('skills-container');
             container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading skill...</p></div>';
             
             try {
-                const skill = await window.omnideck.invoke('get_skill', { conversation_id: convId });
+                const skill = await window.omnideck.invoke('get_consolidated_skill', { skill_id: skillId });
                 
                 if (skill.error) {
                     container.innerHTML = `<div class="error-msg">${skill.error}</div>`;
                     return;
                 }
+
+                const fpsHtml = (skill.failure_patterns || []).map(fp => `
+                    <div class="failure-card" style="margin-top: 8px;">
+                        <div class="failure-meta">
+                            <span class="failure-badge badge-warn">⚠ anti-pattern</span>
+                        </div>
+                        <div class="failure-pattern-text">${escapeHtml(fp.pattern_text || '')}</div>
+                        ${fp.recovery ? `
+                            <div class="failure-recovery">
+                                <i class="bi bi-arrow-right-circle"></i>
+                                <span>${escapeHtml(fp.recovery)}</span>
+                            </div>
+                        ` : ''}
+                    </div>
+                `).join('');
+
+                const convsHtml = (skill.conversations || []).map(c => 
+                    `<div class="skill-source">• ${escapeHtml(c.title)} (${c.date})</div>`
+                ).join('');
 
                 container.innerHTML = `
                     <div class="skill-detail">
@@ -996,10 +1186,10 @@
                             <div>
                                 <div class="detail-title">${escapeHtml(skill.skill_title)}</div>
                                 <div class="detail-meta">
-                                    <span><i class="bi bi-folder"></i> ${escapeHtml(skill.conv_title)}</span>
-                                    <span><i class="bi bi-calendar"></i> ${skill.date}</span>
-                                    <span><i class="bi bi-lightning"></i> ${skill.num_tool_calls} tool calls</span>
-                                    <span><i class="bi bi-cpu"></i> ${skill.model}</span>
+                                    <span><i class="bi bi-tag"></i> ${skill.task_type}</span>
+                                    <span><i class="bi bi-bar-chart"></i> ${skill.difficulty}</span>
+                                    <span><i class="bi bi-star"></i> reusability ${skill.reusability}</span>
+                                    <span><i class="bi bi-collection"></i> ${(skill.conversations || []).length} conversations</span>
                                 </div>
                             </div>
                             <button class="back-btn" onclick="loadSkills()">
@@ -1022,105 +1212,77 @@
                             <pre>${escapeHtml(skill.pitfalls || 'N/A')}</pre>
                         </div>
                         
+                        ${fpsHtml ? `<div class="skill-section"><h3>Failure Patterns (${(skill.failure_patterns || []).length})</h3>${fpsHtml}</div>` : ''}
+                        
                         <div class="skill-section">
                             <h3>Notes</h3>
                             <pre>${escapeHtml(skill.notes || 'N/A')}</pre>
                         </div>
                         
+                        ${convsHtml ? `<div class="skill-section"><h3>Source Conversations</h3>${convsHtml}</div>` : ''}
+                        
                         <div class="skill-actions">
-                            <button class="skill-btn skill-btn-primary" onclick="loadSkillIntoChat('${convId}')">
+                            <button class="skill-btn skill-btn-primary" onclick="loadConsolidatedIntoChat(${skillId})">
                                 <i class="bi bi-chat"></i> Load into Chat
-                            </button>
-                            <button class="skill-btn" onclick="viewConversationFromSkills('${convId}')">
-                                <i class="bi bi-file-text"></i> View Source
-                            </button>
-                            <button class="skill-btn" onclick="reextractSkill('${convId}')">
-                                <i class="bi bi-arrow-clockwise"></i> Re-extract
                             </button>
                         </div>
                     </div>
                 `;
             } catch (e) {
-                container.innerHTML = `<div class="error-msg">Failed to load skill: ${e.message}</div>`;
+                container.innerHTML = `<div class="error-msg">Failed to load: ${e.message}</div>`;
             }
         }
 
-        function loadSkillIntoChat(convId) {
-            // Fetch the skill and compose into chat
-            window.omnideck.invoke('get_skill', { conversation_id: convId }).then(skill => {
-                const context = `Here's a proven happy path from a past conversation for this type of task:\n\n**Problem:** ${skill.problem}\n\n**Happy Path:**\n${skill.happy_path}\n\n**Pitfalls to avoid:**\n${skill.pitfalls}\n\n**Notes:**\n${skill.notes}\n\nPlease follow this approach.`;
+        function loadConsolidatedIntoChat(skillId) {
+            window.omnideck.invoke('get_consolidated_skill', { skill_id: skillId }).then(skill => {
+                const fps = (skill.failure_patterns || []).map(fp => `- ${fp.pattern_text}${fp.recovery ? ' → ' + fp.recovery : ''}`).join('\n');
+                const context = `Here's a consolidated skill from ${skill.conversations?.length || 0} past conversations:\n\n**Problem:** ${skill.problem}\n\n**Happy Path:**\n${skill.happy_path}\n\n**Pitfalls:**\n${skill.pitfalls}\n\n**Failure Patterns:**\n${fps}\n\n**Notes:**\n${skill.notes}\n\nPlease follow this approach.`;
                 window.omnideck.chat.compose({ text: context });
             });
         }
 
-        function viewConversationFromSkills(convId) {
-            // Switch to search tab and show the conversation
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-            document.querySelector('.tab').classList.add('active');
-            document.getElementById('tab-search').classList.add('active');
-            viewConversation(convId);
-        }
+        // ─── Failures Tab ─────────────────────────────────────────
 
-        async function reextractSkill(convId) {
-            const btn = event.target;
-            btn.disabled = true;
-            btn.textContent = 'Extracting...';
+        async function loadFailures() {
+            const container = document.getElementById('failures-container');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading failure patterns...</p></div>';
             
             try {
-                const result = await window.omnideck.invoke('reextract_skill', { 
-                    conversation_id: convId, 
-                    model: 'deepseek-v4-pro:cloud' 
-                });
+                const data = await window.omnideck.invoke('list_failure_patterns');
                 
-                if (result.error) {
-                    btn.textContent = 'Failed';
-                    setTimeout(() => { btn.disabled = false; btn.textContent = 'Re-extract'; }, 2000);
-                } else {
-                    btn.textContent = '✓ Done';
-                    setTimeout(() => viewSkill(convId), 1000);
-                }
-            } catch (e) {
-                btn.textContent = 'Error';
-                setTimeout(() => { btn.disabled = false; btn.textContent = 'Re-extract'; }, 2000);
-            }
-        }
+                const infoEl = document.getElementById('failure-process-info');
+                infoEl.textContent = `${data.count} failure patterns extracted`;
+                document.getElementById('failures-count-badge').textContent = data.count > 0 ? `(${data.count})` : '';
 
-        async function processSkills() {
-            const btn = document.getElementById('process-skills-btn');
-            const info = document.getElementById('skill-process-info');
-            btn.disabled = true;
-            btn.textContent = '⟳ Extracting...';
-            info.textContent = 'Processing batch...';
-            
-            try {
-                const result = await window.omnideck.invoke('process_skills_batch', { 
-                    model: 'deepseek-v4-pro:cloud', 
-                    max_seconds: 100 
-                });
-                
-                if (result.error) {
-                    info.textContent = result.error;
-                    btn.disabled = false;
-                    btn.textContent = '⚡ Extract Skills';
+                if (data.patterns.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            <p>No failure patterns yet. Run extraction.py --failures to generate them.</p>
+                        </div>
+                    `;
                     return;
                 }
-                
-                info.textContent = result.message;
-                
-                if (result.remaining > 0) {
-                    btn.disabled = false;
-                    btn.textContent = '⚡ Continue Extraction';
-                } else {
-                    btn.textContent = '✓ All Extracted';
-                }
-                
-                // Reload skills list
-                loadSkills();
+
+                container.innerHTML = data.patterns.map(p => `
+                    <div class="failure-card">
+                        <div class="failure-meta">
+                            <span class="failure-badge badge-warn">⚠ anti-pattern</span>
+                            <span class="failure-badge badge-type">${p.failure_type}</span>
+                            ${p.frequency > 1 ? `<span class="failure-badge badge-freq">seen ${p.frequency}x</span>` : ''}
+                            ${p.context ? `<span class="failure-badge badge-freq">${escapeHtml(p.context)}</span>` : ''}
+                        </div>
+                        <div class="failure-pattern-text">${escapeHtml(p.pattern_text)}</div>
+                        ${p.recovery ? `
+                            <div class="failure-recovery">
+                                <i class="bi bi-arrow-right-circle"></i>
+                                <span>${escapeHtml(p.recovery)}</span>
+                            </div>
+                        ` : ''}
+                    </div>
+                `).join('');
             } catch (e) {
-                info.textContent = `Error: ${e.message}`;
-                btn.disabled = false;
-                btn.textContent = '⚡ Extract Skills';
+                container.innerHTML = `<div class="error-msg">Failed to load: ${e.message}</div>`;
             }
         }
     </script>
