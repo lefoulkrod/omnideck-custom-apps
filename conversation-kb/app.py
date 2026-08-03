@@ -13,14 +13,37 @@ import time
 import numpy as np
 import requests
 from custom_apps import action
+from kb_index import KBSearchIndex
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "kb.db")
 OLLAMA_URL = "http://localhost:11434/api/embed"
 OLLAMA_CHAT_URL = "http://localhost:11434/api/chat"
-EMBED_MODEL = "nomic-embed-text"
-EMBED_DIM = 768
+EMBED_MODEL = "mxbai-embed-large:latest"
+EMBED_DIM = 1024
 CONV_DIR = "/var/lib/omnideck/conversations"
 DEFAULT_SKILL_MODEL = "huihui_ai/qwen3.5-abliterated:35b"
+
+# Global fast index — lazy-loaded on first search
+_search_index = None
+
+def _get_search_index():
+    """Get or create the global search index, rebuilding if stale."""
+    global _search_index
+    if _search_index is None:
+        _search_index = KBSearchIndex()
+    conn = get_db()
+    try:
+        _search_index.build_if_needed(conn)
+    finally:
+        conn.close()
+    return _search_index
+
+def _invalidate_search_index():
+    """Force index rebuild on next search (call after sync)."""
+    global _search_index
+    if _search_index is not None:
+        _search_index.invalidate()
+        _search_index = None
 
 
 def get_db():
@@ -103,42 +126,100 @@ def get_stats():
         conn.close()
 
 
-def tokenize(text):
-    """Simple tokenizer for keyword search."""
+def tokenize(text, include_bigrams=False):
+    """Tokenize text into unigrams (and optionally bigrams)."""
     text = text.lower()
-    tokens = re.findall(r'[a-z0-9]+', text)
-    return tokens
+    unigrams = re.findall(r'[a-z0-9]+', text)
+    if not include_bigrams or len(unigrams) < 2:
+        return unigrams
+    bigrams = [f"{unigrams[i]} {unigrams[i+1]}" for i in range(len(unigrams)-1)]
+    return unigrams + bigrams
+
+def expand_query(query_tokens, query_emb, all_chunks, top_n=5):
+    """Expand query tokens with significant terms from semantically similar chunks.
+    
+    Finds the top-N most similar chunks and extracts important terms from them,
+    adding them to the query token set. This catches synonyms and related concepts.
+    """
+    if query_emb is None or not all_chunks:
+        return query_tokens
+    
+    # Compute similarity to all chunks
+    chunk_texts = [c["chunk_text"] for c in all_chunks]
+    try:
+        resp = requests.post("http://localhost:11434/api/embed", json={
+            "model": EMBED_MODEL, "input": chunk_texts
+        }, timeout=60)
+        if resp.status_code != 200:
+            return query_tokens
+        chunk_embs = resp.json().get("embeddings", [])
+        if not chunk_embs or len(chunk_embs) != len(all_chunks):
+            return query_tokens
+        
+        chunk_vecs = np.array(chunk_embs, dtype=np.float32)
+        query_norm = query_emb / (np.linalg.norm(query_emb) + 1e-8)
+        chunk_norms = chunk_vecs / (np.linalg.norm(chunk_vecs, axis=1, keepdims=True) + 1e-8)
+        sims = np.dot(chunk_norms, query_norm)
+        
+        # Get top-N chunk indices
+        top_idx = np.argsort(sims)[-top_n:]
+        
+        # Extract significant terms from those chunks (words 4+ chars, not already in query)
+        query_set = set(query_tokens)
+        new_terms = []
+        for idx in top_idx:
+            terms = tokenize(all_chunks[idx]["chunk_text"])
+            for t in terms:
+                if len(t) >= 4 and t not in query_set and t not in new_terms:
+                    new_terms.append(t)
+        
+        # Limit expansion to avoid diluting the query
+        new_terms = new_terms[:10]
+        if new_terms:
+            expanded = query_tokens + new_terms
+            return expanded
+    except:
+        pass
+    
+    return query_tokens
 
 def keyword_search(conn, query_tokens, all_chunks):
     """Compute BM25-like keyword scores for each chunk.
     
+    Uses unigrams + bigrams for phrase awareness.
     Returns a dict of chunk_id -> keyword_score.
     """
     if not query_tokens:
         return {}
     
-    # Build document frequency (how many chunks contain each term)
-    df = {}
+    # Tokenize all chunks once (with bigrams)
+    chunk_token_lists = []
     for chunk in all_chunks:
-        chunk_tokens = set(tokenize(chunk["chunk_text"]))
-        for token in chunk_tokens:
+        tokens = tokenize(chunk["chunk_text"], include_bigrams=True)
+        chunk_token_lists.append(tokens)
+    
+    # Build document frequency
+    df = {}
+    for tokens in chunk_token_lists:
+        seen = set(tokens)
+        for token in seen:
             df[token] = df.get(token, 0) + 1
     
     N = len(all_chunks)
-    avgdl = sum(len(tokenize(c["chunk_text"])) for c in all_chunks) / max(N, 1)
+    avgdl = sum(len(t) for t in chunk_token_lists) / max(N, 1)
     
     scores = {}
     k1 = 1.5
     b = 0.75
     
-    for chunk in all_chunks:
-        chunk_tokens = tokenize(chunk["chunk_text"])
+    for i, chunk in enumerate(all_chunks):
+        chunk_tokens = chunk_token_lists[i]
         chunk_len = len(chunk_tokens)
         if chunk_len == 0:
             scores[chunk["id"]] = 0
             continue
         
-        # Term frequency in this chunk
+        # Term frequency
         tf = {}
         for token in chunk_tokens:
             tf[token] = tf.get(token, 0) + 1
@@ -147,16 +228,17 @@ def keyword_search(conn, query_tokens, all_chunks):
         for qt in query_tokens:
             if qt not in tf:
                 continue
-            # IDF
             n = df.get(qt, 0)
             if n == 0:
                 continue
             idf = math.log((N - n + 0.5) / (n + 0.5) + 1)
-            # BM25 term score
             term_score = idf * (tf[qt] * (k1 + 1)) / (tf[qt] + k1 * (1 - b + b * chunk_len / max(avgdl, 1)))
+            # Bigrams get a small boost (they're more specific)
+            if " " in qt:
+                term_score *= 1.3
             score += term_score
         
-        # Title boost: if query terms appear in the conversation title, boost
+        # Title boost
         title_tokens = set(tokenize(chunk.get("title", "")))
         title_matches = sum(1 for qt in query_tokens if qt in title_tokens)
         if title_matches > 0:
@@ -170,31 +252,55 @@ def keyword_search(conn, query_tokens, all_chunks):
 def search(query: str, limit: int = 20):
     """Hybrid search (semantic + keyword) across all conversation chunks.
     
-    Combines cosine similarity from embeddings with BM25 keyword matching
-    to get the best of both worlds. Results are grouped by conversation.
+    Improvements over v1:
+    - Raw cosine scores (no misleading min-max normalization)
+    - Phrase-aware BM25 with bigrams
+    - Query expansion via semantic similarity (catches synonyms)
+    - Adaptive semantic/keyword weight based on query length
+    - Conversation-level scoring (weighted average of top chunks)
     """
     if not query or not query.strip():
         return {"results": [], "query": query}
     
     query = query.strip()
     query_tokens = tokenize(query)
-    
     query_emb = embed_query(query)
     
     conn = get_db()
     try:
-        # Load all chunks with embeddings and metadata
-        rows = conn.execute("""
-            SELECT se.id, se.conversation_id, se.chunk_type, se.chunk_index, 
-                   se.chunk_text, se.embedding, c.title, c.date
-            FROM search_embeddings se
-            JOIN conversations c ON se.conversation_id = c.id
-        """).fetchall()
+        # Step 1: Get candidate chunk IDs from the fast index
+        candidate_ids = None
+        sem_scores_map = {}
+        
+        if query_emb is not None:
+            index = _get_search_index()
+            candidate_ids, sem_sims = index.search(query_emb, top_k=300)
+            sem_scores_map = dict(zip(candidate_ids, sem_sims))
+        
+        # Step 2: Load only candidate chunks from SQLite
+        if candidate_ids:
+            placeholders = ",".join("?" * len(candidate_ids))
+            rows = conn.execute(f"""
+                SELECT se.id, se.conversation_id, se.chunk_type, se.chunk_index, 
+                       se.chunk_text, c.title, c.date
+                FROM search_embeddings se
+                JOIN conversations c ON se.conversation_id = c.id
+                WHERE se.id IN ({placeholders})
+                ORDER BY CASE se.id
+                    {''.join(f' WHEN ? THEN {i}' for i in range(len(candidate_ids)))}
+                END
+            """, candidate_ids + candidate_ids).fetchall()
+        else:
+            rows = conn.execute("""
+                SELECT se.id, se.conversation_id, se.chunk_type, se.chunk_index, 
+                       se.chunk_text, c.title, c.date
+                FROM search_embeddings se
+                JOIN conversations c ON se.conversation_id = c.id
+            """).fetchall()
         
         if not rows:
             return {"results": [], "query": query, "message": "No indexed conversations found. Run build_index.py first."}
         
-        # Convert to list of dicts for keyword search
         all_chunks = [
             {
                 "id": r["id"],
@@ -208,79 +314,122 @@ def search(query: str, limit: int = 20):
             for r in rows
         ]
         
-        # Semantic scores
-        if query_emb is not None:
-            doc_embs = np.array([
-                np.frombuffer(r["embedding"], dtype=np.float32) for r in rows
-            ])
-            sem_sims = cosine_similarity(query_emb, doc_embs)
-            # Normalize to 0-1 range (cosine sim can be negative)
-            sem_sims = (sem_sims + 1) / 2
+        # Step 3: Query expansion — add related terms from top similar chunks
+        # Skip expansion for very short queries (≤2 words) — too much noise
+        if query_emb is not None and 3 <= len(query_tokens) <= 5:
+            expanded_tokens = expand_query(query_tokens, query_emb, all_chunks, top_n=5)
         else:
-            sem_sims = np.zeros(len(rows))
+            expanded_tokens = query_tokens
         
-        # Keyword scores
-        kw_scores = keyword_search(conn, query_tokens, all_chunks)
+        # Step 4: Semantic scores — use RAW cosine similarity, no min-max stretch
+        # Raw cosine sim is already in a reasonable range (0.2-0.5 for good matches)
+        if sem_scores_map:
+            sem_scores = {cid: max(0, s) for cid, s in sem_scores_map.items()}  # clamp negatives to 0
+        else:
+            sem_scores = {}
+        
+        # Step 5: Keyword scores with bigrams
+        kw_scores = keyword_search(conn, expanded_tokens, all_chunks)
         
         # Normalize keyword scores to 0-1
         max_kw = max(kw_scores.values()) if kw_scores else 1
         if max_kw > 0:
             kw_scores = {k: v / max_kw for k, v in kw_scores.items()}
         
-        # Combine scores: weighted average
-        # Semantic weight 0.4, keyword weight 0.6 (keyword is more reliable for specific terms)
-        SEMANTIC_WEIGHT = 0.4
-        KEYWORD_WEIGHT = 0.6
+        # Step 6: Adaptive weight based on query length
+        word_count = len(query_tokens)
+        if word_count <= 2:
+            # Very short query: keyword slightly favored (exact terms)
+            SEMANTIC_WEIGHT = 0.35
+            KEYWORD_WEIGHT = 0.65
+        elif word_count <= 4:
+            # Short query: balanced with slight keyword lean
+            SEMANTIC_WEIGHT = 0.4
+            KEYWORD_WEIGHT = 0.6
+        elif word_count <= 7:
+            # Medium query: balanced
+            SEMANTIC_WEIGHT = 0.5
+            KEYWORD_WEIGHT = 0.5
+        else:
+            # Long query: semantic dominates (conceptual match)
+            SEMANTIC_WEIGHT = 0.65
+            KEYWORD_WEIGHT = 0.35
         
-        combined_scores = []
-        for i, chunk in enumerate(all_chunks):
-            sem_score = float(sem_sims[i]) if query_emb is not None else 0
+        # Step 7: Score each chunk
+        chunk_scores = []
+        for chunk in all_chunks:
+            sem_score = sem_scores.get(chunk["id"], 0)
             kw_score = kw_scores.get(chunk["id"], 0)
             combined = SEMANTIC_WEIGHT * sem_score + KEYWORD_WEIGHT * kw_score
-            combined_scores.append((combined, sem_score, kw_score, chunk))
+            chunk_scores.append({
+                "combined": combined,
+                "semantic": sem_score,
+                "keyword": kw_score,
+                "chunk": chunk,
+            })
         
         # Sort by combined score
-        combined_scores.sort(key=lambda x: x[0], reverse=True)
+        chunk_scores.sort(key=lambda x: x["combined"], reverse=True)
         
-        # Group by conversation — collect all matching chunks per conversation
-        conv_chunks = {}  # conv_id -> list of match dicts
-        conv_meta = {}    # conv_id -> {title, date}
-        conv_order = []   # track first-appearance order
+        # Step 8: Group by conversation with conversation-level scoring
+        conv_data = {}  # conv_id -> {chunks: [], scores: [], meta: {}}
+        conv_order = []
         
-        for combined, sem, kw, chunk in combined_scores:
+        for cs in chunk_scores:
+            chunk = cs["chunk"]
             conv_id = chunk["conversation_id"]
-            if conv_id not in conv_chunks:
-                conv_chunks[conv_id] = []
-                conv_meta[conv_id] = {"title": chunk["title"], "date": chunk["date"]}
+            if conv_id not in conv_data:
+                conv_data[conv_id] = {"chunks": [], "scores": [], "meta": {"title": chunk["title"], "date": chunk["date"]}}
                 conv_order.append(conv_id)
-            conv_chunks[conv_id].append({
-                "score": round(combined, 4),
-                "semantic_score": round(sem, 4),
-                "keyword_score": round(kw, 4),
+            conv_data[conv_id]["chunks"].append({
+                "score": round(cs["combined"], 4),
+                "semantic_score": round(cs["semantic"], 4),
+                "keyword_score": round(cs["keyword"], 4),
                 "chunk_type": chunk["chunk_type"],
                 "chunk_text": chunk["chunk_text"][:500],
                 "chunk_index": chunk["chunk_index"],
             })
+            conv_data[conv_id]["scores"].append(cs["combined"])
         
-        # Build results: top `limit` conversations, each with up to 5 matching snippets
+        # Score each conversation by weighted average of top-3 chunk scores
+        # (not just the single best chunk)
+        conv_scored = []
+        for conv_id in conv_order:
+            d = conv_data[conv_id]
+            top_scores = sorted(d["scores"], reverse=True)[:3]
+            # Weighted: best gets 0.5, second 0.3, third 0.2
+            if len(top_scores) >= 3:
+                conv_score = 0.5 * top_scores[0] + 0.3 * top_scores[1] + 0.2 * top_scores[2]
+            elif len(top_scores) == 2:
+                conv_score = 0.6 * top_scores[0] + 0.4 * top_scores[1]
+            else:
+                conv_score = top_scores[0]
+            conv_scored.append((conv_score, conv_id))
+        
+        # Sort conversations by their aggregate score
+        conv_scored.sort(key=lambda x: x[0], reverse=True)
+        
+        # Build results
         results = []
-        for conv_id in conv_order[:limit]:
-            chunks = conv_chunks[conv_id]
-            best = chunks[0]
-            meta = conv_meta[conv_id]
+        for conv_score, conv_id in conv_scored[:limit]:
+            d = conv_data[conv_id]
+            meta = d["meta"]
             results.append({
                 "conversation_id": conv_id,
                 "title": meta["title"],
                 "date": meta["date"],
-                "score": best["score"],
-                "match_count": len(chunks),
+                "score": round(conv_score, 4),
+                "match_count": len(d["chunks"]),
                 "events_path": os.path.join(CONV_DIR, conv_id, "events.jsonl"),
-                "matches": chunks[:5],
+                "matches": d["chunks"][:5],
             })
         
         return {
             "query": query,
             "total_chunks_searched": len(rows),
+            "semantic_weight": SEMANTIC_WEIGHT,
+            "keyword_weight": KEYWORD_WEIGHT,
+            "query_expanded": len(expanded_tokens) > len(query_tokens),
             "results": results,
         }
     finally:
@@ -288,8 +437,14 @@ def search(query: str, limit: int = 20):
 
 
 @action
-def get_conversation(conversation_id: str):
-    """Get the full compressed trajectory for a conversation."""
+def get_conversation(conversation_id: str, max_trajectory_chars: int = 0):
+    """Get the compressed trajectory for a conversation.
+    
+    Args:
+        conversation_id: The conversation ID.
+        max_trajectory_chars: Max chars for the trajectory. 0 = no limit.
+                              Use 5000-10000 for a quick summary, or 0 for full.
+    """
     conn = get_db()
     try:
         row = conn.execute(
@@ -299,6 +454,19 @@ def get_conversation(conversation_id: str):
         
         if not row:
             return {"error": "Conversation not found"}
+        
+        trajectory = row["compressed_trajectory"] or ""
+        truncated = False
+        
+        if max_trajectory_chars > 0 and len(trajectory) > max_trajectory_chars:
+            # Keep the header + first N chars + last 500 chars (for the conclusion)
+            header_end = trajectory.find("\n\n##")
+            if header_end == -1:
+                header_end = 0
+            head = trajectory[:max_trajectory_chars]
+            tail = trajectory[-500:]
+            trajectory = head + f"\n\n... [truncated, {len(trajectory)} total chars, showing first {max_trajectory_chars}] ...\n\n" + tail
+            truncated = True
         
         # Get all chunks for this conversation
         chunks = conn.execute("""
@@ -316,7 +484,10 @@ def get_conversation(conversation_id: str):
             "num_tool_calls": row["num_tool_calls"],
             "num_user_msgs": row["num_user_msgs"],
             "est_tokens": row["est_tokens"],
-            "trajectory": row["compressed_trajectory"],
+            "trajectory": trajectory,
+            "trajectory_chars": len(row["compressed_trajectory"] or ""),
+            "trajectory_truncated": truncated,
+            "events_path": os.path.join(CONV_DIR, conversation_id, "events.jsonl"),
             "chunks": [
                 {
                     "type": c["chunk_type"],
@@ -522,6 +693,7 @@ def get_sync_status():
         on_disk = 0
         new_convs = []
         updated_convs = []
+        renamed_convs = []
         
         for d in sorted(os.listdir(CONV_DIR)):
             if d.startswith("_") or d == "routines":
@@ -532,30 +704,53 @@ def get_sync_status():
             on_disk += 1
             
             # Check if in DB
-            row = conn.execute("SELECT id, indexed_at FROM conversations WHERE id = ?", (d,)).fetchone()
+            row = conn.execute("SELECT id, indexed_at, title FROM conversations WHERE id = ?", (d,)).fetchone()
             file_mtime = os.path.getmtime(events_path)
             
             if not row:
                 new_convs.append(d)
             elif row["indexed_at"] and file_mtime > row["indexed_at"]:
                 updated_convs.append(d)
+            elif row:
+                # Check for rename (metadata.json title != DB title)
+                meta_path = os.path.join(CONV_DIR, d, "metadata.json")
+                if os.path.exists(meta_path):
+                    try:
+                        disk_title = json.load(open(meta_path)).get("title", "")
+                        if disk_title and row["title"] != disk_title:
+                            renamed_convs.append(d)
+                    except:
+                        pass
+        
+        # Check for deleted conversations (in DB but not on disk)
+        db_ids = set(r[0] for r in conn.execute("SELECT id FROM conversations").fetchall())
+        disk_ids = set()
+        for d in os.listdir(CONV_DIR):
+            if d.startswith("_") or d == "routines":
+                continue
+            if os.path.exists(os.path.join(CONV_DIR, d, "events.jsonl")):
+                disk_ids.add(d)
+        deleted_convs = db_ids - disk_ids
         
         return {
             "indexed": indexed,
             "on_disk": on_disk,
             "new_conversations": len(new_convs),
             "updated_conversations": len(updated_convs),
-            "needs_sync": len(new_convs) + len(updated_convs) > 0,
+            "renamed_conversations": len(renamed_convs),
+            "deleted_conversations": len(deleted_convs),
+            "needs_sync": len(new_convs) + len(updated_convs) + len(renamed_convs) + len(deleted_convs) > 0,
         }
     finally:
         conn.close()
 
 @action
 def sync(max_seconds: int = 100):
-    """Sync the index with new and updated conversations.
+    """Sync the index with new, updated, renamed, and deleted conversations.
     
     Scans for conversations not yet indexed (or with updated events.jsonl),
-    processes them, and returns stats. Designed to fit within the 120s action timeout.
+    processes them, and returns stats. Also cleans up deleted conversations
+    and updates renamed ones. Designed to fit within the 120s action timeout.
     """
     conn = get_db()
     try:
@@ -566,7 +761,46 @@ def sync(max_seconds: int = 100):
         except:
             pass  # Column already exists
         
-        # Find conversations that need processing
+        # 1. Clean up deleted conversations (in DB but not on disk)
+        db_ids = set(r[0] for r in conn.execute("SELECT id FROM conversations").fetchall())
+        disk_ids = set()
+        for d in os.listdir(CONV_DIR):
+            if d.startswith("_") or d == "routines":
+                continue
+            if os.path.exists(os.path.join(CONV_DIR, d, "events.jsonl")):
+                disk_ids.add(d)
+        deleted_ids = db_ids - disk_ids
+        
+        deleted_count = 0
+        for conv_id in deleted_ids:
+            conn.execute("DELETE FROM search_embeddings WHERE conversation_id = ?", (conv_id,))
+            conn.execute("DELETE FROM skills WHERE conversation_id = ?", (conv_id,))
+            conn.execute("DELETE FROM conversations WHERE id = ?", (conv_id,))
+            deleted_count += 1
+        
+        if deleted_count > 0:
+            conn.commit()
+        
+        # 2. Update renamed conversations (title changed on disk)
+        renamed_count = 0
+        for conv_id in (db_ids & disk_ids):
+            row = conn.execute("SELECT title FROM conversations WHERE id = ?", (conv_id,)).fetchone()
+            if not row:
+                continue
+            meta_path = os.path.join(CONV_DIR, conv_id, "metadata.json")
+            if os.path.exists(meta_path):
+                try:
+                    disk_title = json.load(open(meta_path)).get("title", "")
+                    if disk_title and row["title"] != disk_title:
+                        conn.execute("UPDATE conversations SET title = ? WHERE id = ?", (disk_title, conv_id))
+                        renamed_count += 1
+                except:
+                    pass
+        
+        if renamed_count > 0:
+            conn.commit()
+        
+        # 3. Find conversations that need processing (new or updated)
         to_process = []
         for d in sorted(os.listdir(CONV_DIR)):
             if d.startswith("_") or d == "routines":
@@ -581,8 +815,8 @@ def sync(max_seconds: int = 100):
             if not row or (row["indexed_at"] and file_mtime > row["indexed_at"]) or (row and not row["indexed_at"]):
                 to_process.append(d)
         
-        if not to_process:
-            return {"processed": 0, "message": "Index is up to date", "new_conversations": 0, "updated_conversations": 0}
+        if not to_process and deleted_count == 0 and renamed_count == 0:
+            return {"processed": 0, "message": "Index is up to date", "new_conversations": 0, "updated_conversations": 0, "deleted": 0, "renamed": 0}
         
         # Check Ollama is available
         try:
@@ -658,13 +892,29 @@ def sync(max_seconds: int = 100):
         
         elapsed = time.time() - start_time
         
+        parts = []
+        if processed > 0:
+            parts.append(f"processed {processed} ({is_new} new, {is_updated} updated)")
+        if deleted_count > 0:
+            parts.append(f"removed {deleted_count} deleted")
+        if renamed_count > 0:
+            parts.append(f"updated {renamed_count} renamed")
+        if not parts:
+            parts.append("up to date")
+        
+        # Invalidate the fast index if anything changed
+        if processed > 0 or deleted_count > 0 or renamed_count > 0:
+            _invalidate_search_index()
+        
         return {
             "processed": processed,
             "new_conversations": is_new,
             "updated_conversations": is_updated,
+            "deleted": deleted_count,
+            "renamed": renamed_count,
             "remaining": len(to_process) - processed,
             "elapsed": round(elapsed, 1),
-            "message": f"Processed {processed} conversation{'s' if processed != 1 else ''} ({is_new} new, {is_updated} updated) in {elapsed:.1f}s",
+            "message": f"{', '.join(parts)}" + (f" in {elapsed:.1f}s" if elapsed > 0 else ""),
         }
     finally:
         conn.close()
@@ -1306,61 +1556,220 @@ def reextract_skill(conversation_id: str, model: str = ""):
 
 @action
 def search_skills(query: str, limit: int = 10):
-    """Semantic search across extracted skills by meaning.
+    """Search consolidated skills by keyword matching.
     
-    Embeds the query and compares against skill embeddings to find
-    the most relevant skills, regardless of keyword matching.
+    Searches skill titles, problem descriptions, and happy paths
+    for matching terms. Falls back to consolidated skills since
+    per-conversation skills are not currently extracted.
     """
     if not query or not query.strip():
         return {"results": [], "query": query}
     
-    query_emb = embed_query(query.strip())
-    if query_emb is None:
-        return {"error": "Failed to generate query embedding. Is Ollama running?", "results": []}
+    query_lower = query.strip().lower()
+    query_tokens = set(tokenize(query_lower))
     
     conn = get_db()
     try:
-        # Load all skill embeddings
+        # First try consolidated skills (they're the ones with data)
         rows = conn.execute("""
-            SELECT se.skill_id, se.embedding, s.skill_title, s.problem, s.task_type, 
-                   s.difficulty, s.happy_path, s.pitfalls, s.notes, s.conversation_id,
-                   c.title as conv_title, c.date
-            FROM skill_embeddings se
-            JOIN skills s ON se.skill_id = s.id
-            JOIN conversations c ON s.conversation_id = c.id
+            SELECT id, skill_title, problem, task_type, difficulty, reusability,
+                   happy_path, pitfalls, notes, conversation_ids
+            FROM consolidated_skills
+            ORDER BY reusability DESC
         """).fetchall()
         
         if not rows:
-            return {"results": [], "query": query, "message": "No skill embeddings found. Extract skills first."}
+            return {"results": [], "query": query, "message": "No consolidated skills found."}
         
-        # Compute similarities
-        doc_embs = np.array([np.frombuffer(r["embedding"], dtype=np.float32) for r in rows])
-        sims = cosine_similarity(query_emb, doc_embs)
+        # Score each skill by keyword overlap
+        scored = []
+        for r in rows:
+            search_text = f"{r['skill_title'] or ''} {r['problem'] or ''} {r['happy_path'] or ''} {r['pitfalls'] or ''}".lower()
+            search_tokens = set(tokenize(search_text))
+            
+            # Jaccard-like overlap score
+            overlap = len(query_tokens & search_tokens)
+            if overlap == 0:
+                continue
+            
+            score = overlap / len(query_tokens)  # recall-based: fraction of query terms found
+            
+            # Title match bonus
+            title_tokens = set(tokenize(r['skill_title'] or ''))
+            title_overlap = len(query_tokens & title_tokens)
+            if title_overlap > 0:
+                score += 0.3 * (title_overlap / len(query_tokens))
+            
+            scored.append((score, r))
         
-        # Sort by similarity
-        top_indices = np.argsort(sims)[::-1][:limit]
+        # Sort by score descending
+        scored.sort(key=lambda x: x[0], reverse=True)
         
         results = []
-        for idx in top_indices:
-            row = rows[idx]
-            sim = float(sims[idx])
+        for score, r in scored[:limit]:
+            conv_ids = json.loads(r["conversation_ids"]) if r["conversation_ids"] else []
+            # Get conversation titles
+            conv_titles = []
+            for cid in conv_ids[:3]:
+                c = conn.execute("SELECT title, date FROM conversations WHERE id = ?", (cid,)).fetchone()
+                if c:
+                    conv_titles.append(f"{c['title']} ({c['date']})")
+            
             results.append({
-                "skill_id": row["skill_id"],
-                "conversation_id": row["conversation_id"],
-                "skill_title": row["skill_title"],
-                "problem": row["problem"][:300],
-                "task_type": row["task_type"],
-                "difficulty": row["difficulty"],
-                "happy_path": row["happy_path"][:500],
-                "similarity": round(sim, 4),
-                "conv_title": row["conv_title"],
-                "date": row["date"],
+                "skill_id": r["id"],
+                "conversation_id": conv_ids[0] if conv_ids else "",
+                "skill_title": r["skill_title"] or "(untitled)",
+                "problem": (r["problem"] or "")[:300],
+                "task_type": r["task_type"] or "other",
+                "difficulty": r["difficulty"] or "medium",
+                "happy_path": (r["happy_path"] or "")[:500],
+                "similarity": round(score, 4),
+                "conv_title": conv_titles[0] if conv_titles else "",
+                "date": "",
             })
         
         return {
             "query": query,
             "total_skills_searched": len(rows),
             "results": results,
+        }
+    finally:
+        conn.close()
+
+
+# ─── Consolidated Skills + Failure Patterns (v2) ───────────────
+
+@action
+def list_consolidated_skills(task_type: str = "", limit: int = 50):
+    """List consolidated skills (clustered, one per task type)."""
+    conn = get_db()
+    try:
+        query = "SELECT * FROM consolidated_skills"
+        params = []
+        if task_type:
+            query += " WHERE task_type LIKE ?"
+            params.append(f"%{task_type}%")
+        query += " ORDER BY reusability DESC, extracted_at DESC LIMIT ?"
+        params.append(limit)
+        
+        rows = conn.execute(query, params).fetchall()
+        
+        return {
+            "skills": [
+                {
+                    "id": r["id"],
+                    "cluster_id": r["cluster_id"],
+                    "skill_title": r["skill_title"] or "(untitled)",
+                    "problem": r["problem"],
+                    "task_type": r["task_type"],
+                    "difficulty": r["difficulty"],
+                    "reusability": r["reusability"],
+                    "happy_path": r["happy_path"],
+                    "pitfalls": r["pitfalls"],
+                    "notes": r["notes"],
+                    "failure_patterns": json.loads(r["failure_patterns"]) if r["failure_patterns"] else [],
+                    "conversation_ids": json.loads(r["conversation_ids"]) if r["conversation_ids"] else [],
+                    "model": r["model"],
+                }
+                for r in rows
+            ],
+            "count": len(rows),
+        }
+    finally:
+        conn.close()
+
+@action
+def get_consolidated_skill(skill_id: int):
+    """Get a single consolidated skill with all details."""
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT * FROM consolidated_skills WHERE id = ?", (skill_id,)).fetchone()
+        if not row:
+            return {"error": "Skill not found"}
+        
+        # Get conversation titles for this cluster
+        conv_ids = json.loads(row["conversation_ids"]) if row["conversation_ids"] else []
+        conv_titles = []
+        for cid in conv_ids:
+            c = conn.execute("SELECT title, date FROM conversations WHERE id = ?", (cid,)).fetchone()
+            if c:
+                conv_titles.append({"id": cid, "title": c["title"], "date": c["date"]})
+        
+        return {
+            "id": row["id"],
+            "cluster_id": row["cluster_id"],
+            "skill_title": row["skill_title"] or "(untitled)",
+            "problem": row["problem"],
+            "task_type": row["task_type"],
+            "difficulty": row["difficulty"],
+            "reusability": row["reusability"],
+            "happy_path": row["happy_path"],
+            "pitfalls": row["pitfalls"],
+            "notes": row["notes"],
+            "failure_patterns": json.loads(row["failure_patterns"]) if row["failure_patterns"] else [],
+            "conversations": conv_titles,
+            "model": row["model"],
+        }
+    finally:
+        conn.close()
+
+@action
+def list_failure_patterns():
+    """List all failure patterns with source references."""
+    conn = get_db()
+    try:
+        rows = conn.execute("""
+            SELECT fp.id, fp.pattern_text, fp.context, fp.failure_type, fp.frequency, 
+                   fp.recovery, fp.source_conversations, fp.source_context
+            FROM failure_patterns fp
+            ORDER BY fp.frequency DESC, fp.extracted_at DESC
+        """).fetchall()
+        
+        patterns = []
+        for r in rows:
+            # Get conversation titles for source conversations
+            conv_ids = json.loads(r["source_conversations"]) if r["source_conversations"] else []
+            conv_titles = []
+            for cid in conv_ids:
+                c = conn.execute("SELECT title, date FROM conversations WHERE id = ?", (cid,)).fetchone()
+                if c:
+                    conv_titles.append({"id": cid, "title": c["title"], "date": c["date"]})
+            
+            # Parse source context
+            source_ctx = json.loads(r["source_context"]) if r["source_context"] else None
+            
+            patterns.append({
+                "id": r["id"],
+                "pattern_text": r["pattern_text"],
+                "context": r["context"],
+                "frequency": r["frequency"],
+                "recovery": r["recovery"],
+                "source_conversations": conv_titles,
+                "source_context": source_ctx,
+            })
+        
+        return {
+            "patterns": patterns,
+            "count": len(patterns),
+        }
+    finally:
+        conn.close()
+
+@action
+def get_extraction_status():
+    """Get status of consolidated skills and failure patterns."""
+    conn = get_db()
+    try:
+        skills = conn.execute("SELECT COUNT(*) FROM consolidated_skills").fetchone()[0]
+        patterns = conn.execute("SELECT COUNT(*) FROM failure_patterns").fetchone()[0]
+        clusters = conn.execute("SELECT COUNT(DISTINCT cluster_id) FROM conversation_clusters WHERE cluster_id != -1").fetchone()[0]
+        noise = conn.execute("SELECT COUNT(*) FROM conversation_clusters WHERE cluster_id = -1").fetchone()[0]
+        
+        return {
+            "consolidated_skills": skills,
+            "failure_patterns": patterns,
+            "clusters": clusters,
+            "noise_conversations": noise,
         }
     finally:
         conn.close()
