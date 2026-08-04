@@ -1,0 +1,5 @@
+{
+  "title": "Sticky Wiki",
+  "description": "A personal wiki of markdown pages — inspired by Andrej Karpathy's LLM Wiki pattern. Browse, create, edit, and search interlinked wiki pages stored as plain markdown files.",
+  "icon": "bi-journal-text"
+}

@@ -1,0 +1,1421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conversation Knowledge Base</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+    <style>
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --surface-hover: #1c2128;
+            --border: #30363d;
+            --text: #e6edf3;
+            --text-muted: #8b949e;
+            --accent: #58a6ff;
+            --accent-hover: #79b8ff;
+            --success: #3fb950;
+            --warning: #d29922;
+            --danger: #f85149;
+            --radius: 8px;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 24px 16px;
+        }
+
+        /* Header */
+        header {
+            margin-bottom: 24px;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        h1 i { color: var(--accent); }
+
+        .subtitle {
+            color: var(--text-muted);
+            font-size: 0.875rem;
+            margin-top: 4px;
+        }
+
+        /* Stats bar */
+        .stats-bar {
+            display: flex;
+            gap: 16px;
+            margin: 16px 0;
+            flex-wrap: wrap;
+        }
+
+        .stat {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 8px 14px;
+            font-size: 0.8rem;
+        }
+
+        .stat-value {
+            font-weight: 600;
+            color: var(--accent);
+            font-size: 1rem;
+        }
+
+        .stat-label {
+            color: var(--text-muted);
+        }
+
+        /* Search */
+        .search-box {
+            position: relative;
+            margin-bottom: 20px;
+        }
+
+        .search-box i {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+            font-size: 1rem;
+        }
+
+        #search-input {
+            width: 100%;
+            padding: 12px 16px 12px 42px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            color: var(--text);
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        #search-input:focus {
+            border-color: var(--accent);
+        }
+
+        #search-input::placeholder {
+            color: var(--text-muted);
+        }
+
+        /* Loading */
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted);
+        }
+
+        .loading .spinner {
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-bottom: 12px;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Results */
+        .results-header {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+        }
+
+        .result-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px;
+            margin-bottom: 12px;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+        }
+
+        .result-card:hover {
+            border-color: var(--accent);
+            background: var(--surface-hover);
+        }
+
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+
+        .result-title {
+            font-weight: 600;
+            font-size: 0.95rem;
+            color: var(--text);
+        }
+
+        .result-meta {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            white-space: nowrap;
+        }
+
+        .result-similarity {
+            display: inline-block;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 2px 6px;
+            font-size: 0.7rem;
+            color: var(--accent);
+            font-family: monospace;
+        }
+
+        .result-chunk {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            line-height: 1.5;
+            max-height: 80px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .result-chunk::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 20px;
+            background: linear-gradient(transparent, var(--surface));
+        }
+
+        .chunk-badge {
+            display: inline-block;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 1px 6px;
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Conversation detail view */
+        .conversation-detail {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+
+        .detail-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 16px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .detail-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        .back-btn {
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            padding: 6px 12px;
+            border-radius: var(--radius);
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: all 0.2s;
+        }
+
+        .back-btn:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .detail-meta {
+            display: flex;
+            gap: 16px;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+        }
+
+        .detail-meta span {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .trajectory {
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+            font-size: 0.8rem;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-height: 600px;
+            overflow-y: auto;
+            padding: 16px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            color: var(--text-muted);
+        }
+
+        .trajectory .user-msg { color: var(--accent); font-weight: 600; }
+        .trajectory .thinking { color: var(--warning); }
+        .trajectory .tool-call { color: var(--success); }
+        .trajectory .response { color: var(--text); }
+        .trajectory .result { color: var(--text-muted); font-size: 0.75rem; }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+        }
+
+        .empty-state i {
+            font-size: 3rem;
+            margin-bottom: 16px;
+            display: block;
+            color: var(--border);
+        }
+
+        /* Error */
+        .error-msg {
+            background: rgba(248, 81, 73, 0.1);
+            border: 1px solid var(--danger);
+            border-radius: var(--radius);
+            padding: 12px 16px;
+            color: var(--danger);
+            font-size: 0.85rem;
+            margin-bottom: 16px;
+        }
+
+        /* Match snippets */
+        .match-list {
+            margin-top: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .match-snippet {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 8px 10px;
+            cursor: pointer;
+            transition: border-color 0.15s;
+            position: relative;
+        }
+
+        .match-snippet:hover {
+            border-color: var(--accent);
+        }
+
+        .match-badge {
+            display: inline-block;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 1px 5px;
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-right: 6px;
+        }
+
+        .match-score {
+            font-size: 0.65rem;
+            color: var(--accent);
+            font-family: monospace;
+            float: right;
+        }
+
+        .match-text {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            line-height: 1.5;
+            margin-top: 4px;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            word-break: break-word;
+        }
+
+        .match-text mark {
+            background: rgba(210, 153, 34, 0.3);
+            color: var(--warning);
+            border-radius: 2px;
+            padding: 0 2px;
+        }
+
+        /* Failure pattern cards */
+        .failure-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-left: 3px solid var(--warning);
+            border-radius: var(--radius);
+            padding: 14px 16px;
+            margin-bottom: 12px;
+        }
+
+        .failure-pattern-text {
+            font-size: 0.9rem;
+            color: var(--text);
+            line-height: 1.5;
+            margin-bottom: 10px;
+        }
+
+        .failure-recovery {
+            background: rgba(63, 185, 80, 0.08);
+            border: 1px solid rgba(63, 185, 80, 0.2);
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-size: 0.85rem;
+            color: var(--success);
+            line-height: 1.5;
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+        }
+
+        .failure-recovery i {
+            margin-top: 2px;
+            flex-shrink: 0;
+        }
+
+        .failure-meta {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+        }
+
+        .failure-badge {
+            display: inline-block;
+            border-radius: 4px;
+            padding: 2px 8px;
+            font-size: 0.7rem;
+            font-weight: 500;
+        }
+
+        .badge-warn { background: rgba(210, 153, 34, 0.15); color: var(--warning); }
+        .badge-freq { background: var(--bg); border: 1px solid var(--border); color: var(--text-muted); }
+        .badge-type { background: var(--bg); border: 1px solid var(--border); color: var(--text-muted); }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .tab {
+            padding: 8px 16px;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 0.9rem;
+            border-bottom: 2px solid transparent;
+            transition: color 0.2s, border-color 0.2s;
+        }
+
+        .tab:hover { color: var(--text); }
+        .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* Skill cards */
+        .skill-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px;
+            margin-bottom: 12px;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+        }
+
+        .skill-card:hover {
+            border-color: var(--accent);
+            background: var(--surface-hover);
+        }
+
+        .skill-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+
+        .skill-title {
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+
+        .skill-badges {
+            display: flex;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+
+        .skill-badge {
+            display: inline-block;
+            border-radius: 4px;
+            padding: 2px 8px;
+            font-size: 0.7rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .badge-research { background: rgba(88, 166, 255, 0.15); color: var(--accent); border: 1px solid rgba(88, 166, 255, 0.3); }
+        .badge-build { background: rgba(63, 185, 80, 0.15); color: var(--success); border: 1px solid rgba(63, 185, 80, 0.3); }
+        .badge-configure { background: rgba(210, 153, 34, 0.15); color: var(--warning); border: 1px solid rgba(210, 153, 34, 0.3); }
+        .badge-qa { background: rgba(163, 113, 247, 0.15); color: #a371f7; border: 1px solid rgba(163, 113, 247, 0.3); }
+        .badge-debug { background: rgba(248, 81, 73, 0.15); color: var(--danger); border: 1px solid rgba(248, 81, 73, 0.3); }
+        .badge-other { background: rgba(139, 148, 158, 0.15); color: var(--text-muted); border: 1px solid var(--border); }
+        .badge-simple { background: rgba(63, 185, 80, 0.1); color: var(--success); }
+        .badge-medium { background: rgba(210, 153, 34, 0.1); color: var(--warning); }
+        .badge-complex { background: rgba(248, 81, 73, 0.1); color: var(--danger); }
+
+        .skill-problem {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        .skill-source {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        /* Skill detail */
+        .skill-detail {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+
+        .skill-section {
+            margin-bottom: 16px;
+        }
+
+        .skill-section h3 {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        .skill-section pre {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-size: 0.85rem;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-break: break-word;
+            color: var(--text);
+        }
+
+        .skill-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+        }
+
+        .skill-btn {
+            padding: 6px 14px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            background: var(--bg);
+            color: var(--text);
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: all 0.2s;
+        }
+
+        .skill-btn:hover { border-color: var(--accent); color: var(--accent); }
+        .skill-btn-primary { border-color: var(--accent); color: var(--accent); }
+
+        /* Process button */
+        .process-bar {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+            padding: 12px 16px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+        }
+
+        .process-bar button {
+            padding: 6px 14px;
+            border-radius: var(--radius);
+            border: 1px solid var(--accent);
+            background: rgba(88, 166, 255, 0.1);
+            color: var(--accent);
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+
+        .process-bar button:hover { background: rgba(88, 166, 255, 0.2); }
+        .process-bar button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .process-info {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        /* Filter bar */
+        .filter-bar {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .filter-btn {
+            padding: 4px 12px;
+            border-radius: 4px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: all 0.2s;
+        }
+
+        .filter-btn:hover { border-color: var(--text-muted); color: var(--text); }
+        .filter-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(88, 166, 255, 0.1); }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg); }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1><i class="bi bi-chat-dots"></i> Conversation Knowledge Base</h1>
+            <div class="subtitle" id="global-status" style="font-size:0.8rem; display:flex; gap:12px; flex-wrap:wrap;">
+                <span id="stat-summary">Loading...</span>
+            </div>
+        </header>
+
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('search')">🔍 Search</button>
+            <button class="tab" onclick="switchTab('lessons')">💡 Lessons <span id="lessons-count-badge"></span></button>
+            <button class="tab" onclick="switchTab('drafts')">📥 Draft Queue <span id="drafts-count-badge"></span></button>
+        </div>
+
+        <div id="tab-search" class="tab-content active">
+            <div class="search-box">
+                <i class="bi bi-search"></i>
+                <input type="text" id="search-input" placeholder="Search your conversations... (e.g. 'how did I set up the email routine?')" autocomplete="off">
+            </div>
+            <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px; font-size:0.8rem; color:var(--text-muted);">
+                <span id="stat-convs">—</span> conversations · <span id="stat-chunks">—</span> chunks
+                <span style="flex:1"></span>
+                <span id="sync-status" style="cursor:pointer;" onclick="doSync()">
+                    <span id="stat-sync">—</span> <span id="stat-sync-label">checking...</span>
+                </span>
+            </div>
+            <div id="results-container">
+                <div class="empty-state">
+                    <i class="bi bi-chat-square-text"></i>
+                    <p>Start typing to search across your conversation history</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-lessons" class="tab-content">
+            <div class="process-bar">
+                <button id="extract-lessons-btn" onclick="extractLessons()">🔄 Re-extract Lessons</button>
+                <span class="process-info" id="lesson-process-info">Loading...</span>
+            </div>
+            <div class="search-box" style="margin-bottom:12px;">
+                <i class="bi bi-search"></i>
+                <input type="text" id="lesson-search-input" placeholder="Search active lessons..." autocomplete="off">
+            </div>
+            <div class="filter-bar" id="lesson-filters">
+                <button class="filter-btn active" data-cat="">All</button>
+                <button class="filter-btn" data-cat="technical_approach">Technical</button>
+                <button class="filter-btn" data-cat="workflow">Workflow</button>
+                <button class="filter-btn" data-cat="debugging">Debugging</button>
+                <button class="filter-btn" data-cat="tool_usage">Tool Usage</button>
+                <button class="filter-btn" data-cat="environment">Environment</button>
+            </div>
+            <div id="lessons-container">
+                <div class="empty-state">
+                    <i class="bi bi-lightbulb"></i>
+                    <p>No active lessons yet</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-drafts" class="tab-content">
+            <div class="process-bar">
+                <span class="process-info" id="draft-process-info">Loading...</span>
+            </div>
+            <div id="drafts-container">
+                <div class="empty-state">
+                    <i class="bi bi-inbox"></i>
+                    <p>No drafts to review</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/api/custom-apps/sdk.js"></script>
+    <script>
+        const searchInput = document.getElementById('search-input');
+        const resultsContainer = document.getElementById('results-container');
+        let searchTimer = null;
+        let currentView = 'search';
+
+        // Load stats on page load
+        async function loadStats() {
+            try {
+                const stats = await window.omnideck.invoke('get_stats');
+                document.getElementById('stat-convs').textContent = stats.total_conversations;
+                document.getElementById('stat-chunks').textContent = stats.total_chunks.toLocaleString();
+                document.getElementById('stat-date').textContent = 
+                    `${stats.date_range.start} → ${stats.date_range.end}`;
+                const lessonsEl = document.getElementById('stat-lessons');
+                if (lessonsEl && stats.total_lessons > 0) {
+                    lessonsEl.textContent = stats.total_lessons;
+                }
+            } catch (e) {
+                console.error('Failed to load stats:', e);
+            }
+            // Check sync status
+            checkSyncStatus();
+        }
+
+        // Check if sync is needed
+        async function checkSyncStatus() {
+            try {
+                const status = await window.omnideck.invoke('get_sync_status');
+                const syncEl = document.getElementById('stat-sync');
+                const labelEl = document.getElementById('stat-sync-label');
+                
+                if (status.needs_sync) {
+                    syncEl.textContent = `${status.new_conversations + status.updated_conversations}`;
+                    labelEl.textContent = ` need sync — click to update`;
+                    document.getElementById('sync-status').style.borderColor = 'var(--warning)';
+                } else {
+                    syncEl.textContent = '✓';
+                    labelEl.textContent = ` up to date (${status.indexed} indexed)`;
+                    document.getElementById('sync-status').style.borderColor = 'var(--success)';
+                }
+            } catch (e) {
+                document.getElementById('stat-sync').textContent = '?';
+                document.getElementById('stat-sync-label').textContent = ' sync status unavailable';
+            }
+        }
+
+        // Run sync
+        async function doSync() {
+            const syncEl = document.getElementById('stat-sync');
+            const labelEl = document.getElementById('stat-sync-label');
+            syncEl.textContent = '⟳';
+            labelEl.textContent = ' syncing...';
+            document.getElementById('sync-status').style.borderColor = 'var(--accent)';
+
+            try {
+                const result = await window.omnideck.invoke('sync', { max_seconds: 100 });
+                
+                if (result.error) {
+                    syncEl.textContent = '!';
+                    labelEl.textContent = ` ${result.error}`;
+                    document.getElementById('sync-status').style.borderColor = 'var(--danger)';
+                    return;
+                }
+
+                // Reload stats
+                await loadStats();
+                
+                if (result.remaining > 0) {
+                    syncEl.textContent = `${result.remaining}`;
+                    labelEl.textContent = ` remaining — click again to continue`;
+                    document.getElementById('sync-status').style.borderColor = 'var(--warning)';
+                } else {
+                    syncEl.textContent = '✓';
+                    labelEl.textContent = ` ${result.message}`;
+                    document.getElementById('sync-status').style.borderColor = 'var(--success)';
+                }
+            } catch (e) {
+                syncEl.textContent = '!';
+                labelEl.textContent = ` sync failed: ${e.message}`;
+                document.getElementById('sync-status').style.borderColor = 'var(--danger)';
+            }
+        }
+
+        // Debounced search
+        searchInput.addEventListener('input', (e) => {
+            clearTimeout(searchTimer);
+            const query = e.target.value.trim();
+            
+            if (query.length < 3) {
+                resultsContainer.innerHTML = `
+                    <div class="empty-state">
+                        <i class="bi bi-chat-square-text"></i>
+                        <p>Start typing to search across your conversation history</p>
+                    </div>
+                `;
+                return;
+            }
+
+            searchTimer = setTimeout(() => doSearch(query), 300);
+        });
+
+        async function doSearch(query) {
+            currentView = 'search';
+            resultsContainer.innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Searching...</p>
+                </div>
+            `;
+
+            try {
+                const result = await window.omnideck.invoke('search', { query, limit: 20 });
+                
+                if (result.error) {
+                    resultsContainer.innerHTML = `<div class="error-msg">${result.error}</div>`;
+                    return;
+                }
+
+                if (!result.results || result.results.length === 0) {
+                    resultsContainer.innerHTML = `
+                        <div class="empty-state">
+                            <i class="bi bi-emoji-frown"></i>
+                            <p>No results found for "${query}"</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                // Score threshold: hide results below 10%
+                const MIN_SCORE = 0.10;
+                const filtered = result.results.filter(r => r.score >= MIN_SCORE);
+
+                if (filtered.length === 0) {
+                    resultsContainer.innerHTML = `
+                        <div class="empty-state">
+                            <i class="bi bi-emoji-frown"></i>
+                            <p>No strong matches found for "${query}" (best was ${(result.results[0].score * 100).toFixed(0)}%)</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                const resultsHtml = filtered.map(r => {
+                    const matchesHtml = r.matches.map((m, i) => `
+                        <div class="match-snippet" onclick="event.stopPropagation(); viewConversation('${r.conversation_id}')">
+                            <span class="match-badge">${m.chunk_type.replace('_', ' ')}</span>
+                            <span class="match-score">${(m.score * 100).toFixed(0)}%</span>
+                            <div class="match-text">${highlightText(m.chunk_text, query)}</div>
+                        </div>
+                    `).join('');
+                    return `
+                        <div class="result-card" onclick="viewConversation('${r.conversation_id}')">
+                            <div class="result-header">
+                                <div>
+                                    <div class="result-title">${highlightText(r.title, query)}</div>
+                                    <div class="result-meta">${r.date} · ${r.match_count} match${r.match_count !== 1 ? 'es' : ''}</div>
+                                </div>
+                                <div class="result-similarity">${(r.score * 100).toFixed(1)}%</div>
+                            </div>
+                            <div class="match-list">${matchesHtml}</div>
+                        </div>
+                    `;
+                }).join('');
+
+                const hiddenCount = result.results.length - filtered.length;
+                const headerParts = [`${filtered.length} results from ${result.total_chunks_searched} chunks`];
+                if (hiddenCount > 0) {
+                    headerParts.push(`(${hiddenCount} below threshold)`);
+                }
+
+                resultsContainer.innerHTML = `
+                    <div class="results-header">
+                        ${headerParts.join(' ')}
+                    </div>
+                    ${resultsHtml}
+                `;
+            } catch (e) {
+                resultsContainer.innerHTML = `<div class="error-msg">Search failed: ${e.message}</div>`;
+            }
+        }
+
+        async function viewConversation(convId) {
+            currentView = 'detail';
+            resultsContainer.innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Loading conversation...</p>
+                </div>
+            `;
+
+            try {
+                const conv = await window.omnideck.invoke('get_conversation', { conversation_id: convId, max_trajectory_chars: 15000 });
+                
+                if (conv.error) {
+                    resultsContainer.innerHTML = `<div class="error-msg">${conv.error}</div>`;
+                    return;
+                }
+
+                // Format trajectory with syntax highlighting
+                let trajectoryHtml = escapeHtml(conv.trajectory || '');
+                trajectoryHtml = trajectoryHtml
+                    .replace(/## USER MESSAGE:/g, '<span class="user-msg">## USER MESSAGE:</span>')
+                    .replace(/THINKING:/g, '<span class="thinking">THINKING:</span>')
+                    .replace(/TOOL_CALL:/g, '<span class="tool-call">TOOL_CALL:</span>')
+                    .replace(/RESPONSE:/g, '<span class="response">RESPONSE:</span>')
+                    .replace(/RESULT\(/g, '<span class="result">RESULT(');
+
+                const truncNotice = conv.trajectory_truncated
+                    ? `<div class="error-msg" style="margin-bottom: 12px;">
+                        <i class="bi bi-info-circle"></i>
+                        Trajectory truncated to 15,000 chars (full: ${(conv.trajectory_chars || 0).toLocaleString()} chars).
+                        Read the full events.jsonl at <code>${escapeHtml(conv.events_path || '')}</code>
+                       </div>`
+                    : '';
+
+                resultsContainer.innerHTML = `
+                    <div class="conversation-detail">
+                        <div class="detail-header">
+                            <div>
+                                <div class="detail-title">${escapeHtml(conv.title)}</div>
+                                <div class="detail-meta">
+                                    <span><i class="bi bi-calendar"></i> ${conv.date}</span>
+                                    <span><i class="bi bi-lightning"></i> ${conv.num_tool_calls} tool calls</span>
+                                    <span><i class="bi bi-chat"></i> ${conv.num_user_msgs} user messages</span>
+                                    <span><i class="bi bi-file-text"></i> ~${conv.est_tokens.toLocaleString()} tokens</span>
+                                    <span><i class="bi bi-arrows-collapse"></i> ${(conv.trajectory_chars || 0).toLocaleString()} chars</span>
+                                </div>
+                            </div>
+                            <button class="back-btn" onclick="backToSearch()">
+                                <i class="bi bi-arrow-left"></i> Back
+                            </button>
+                        </div>
+                        ${truncNotice}
+                        <div class="trajectory">${trajectoryHtml}</div>
+                    </div>
+                `;
+            } catch (e) {
+                resultsContainer.innerHTML = `<div class="error-msg">Failed to load: ${e.message}</div>`;
+            }
+        }
+
+        function backToSearch() {
+            currentView = 'search';
+            const query = searchInput.value.trim();
+            if (query.length >= 3) {
+                doSearch(query);
+            } else {
+                resultsContainer.innerHTML = `
+                    <div class="empty-state">
+                        <i class="bi bi-chat-square-text"></i>
+                        <p>Start typing to search across your conversation history</p>
+                    </div>
+                `;
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text || '';
+            return div.innerHTML;
+        }
+
+        // Highlight query terms in text: wrap matches in <mark>
+        function highlightText(text, query) {
+            const escaped = escapeHtml(text);
+            if (!query || query.length < 2) return escaped;
+            // Extract significant words (3+ chars) from the query
+            const words = query.toLowerCase().match(/\b\w{3,}\b/g) || [];
+            if (words.length === 0) return escaped;
+            // Create a regex that matches any of the words (case-insensitive)
+            const pattern = new RegExp('(' + words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')', 'gi');
+            return escaped.replace(pattern, '<mark>$1</mark>');
+        }
+
+        // Initialize
+        loadStats();
+        searchInput.focus();
+
+        // ─── Tab Management ───────────────────────────────────────
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById(`tab-${tabName}`).classList.add('active');
+            
+            if (tabName === 'lessons') {
+                loadLessons();
+            } else if (tabName === 'skills') {
+                loadSkills();
+            } else if (tabName === 'failures') {
+                loadFailures();
+            }
+        }
+
+        // ─── Lessons Tab ─────────────────────────────────────────
+
+        async function extractLessons() {
+            const btn = document.getElementById('extract-lessons-btn');
+            const info = document.getElementById('lesson-process-info');
+            btn.disabled = true;
+            btn.textContent = '⟳ Extracting...';
+            info.textContent = 'Scanning conversations for self-corrections...';
+
+            try {
+                const result = await window.omnideck.invoke('extract_lessons', { max_seconds: 100 });
+                if (result.error) {
+                    info.textContent = `Error: ${result.error}`;
+                } else {
+                    info.textContent = result.message;
+                }
+                // Reload the lessons list
+                loadLessons();
+            } catch (e) {
+                info.textContent = `Failed: ${e.message}`;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🔄 Re-extract Lessons';
+            }
+        }
+
+        async function loadLessons() {
+            const container = document.getElementById('lessons-container');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading lessons...</p></div>';
+
+            try {
+                const data = await window.omnideck.invoke('list_lessons', { status_filter: '' });
+                const stats = await window.omnideck.invoke('get_lessons_stats');
+
+                const byStatus = stats.by_status || {};
+                const parts = [];
+                if (byStatus.active) parts.push(`${byStatus.active} active`);
+                if (byStatus.draft) parts.push(`${byStatus.draft} drafts`);
+                if (byStatus.rejected) parts.push(`${byStatus.rejected} rejected`);
+                if (byStatus.archived) parts.push(`${byStatus.archived} archived`);
+                document.getElementById('lesson-process-info').textContent =
+                    parts.join(' · ') + ' · ' + Object.entries(stats.by_category || {}).map(([k,v]) => `${k} (${v})`).join(', ');
+                document.getElementById('lessons-count-badge').textContent =
+                    data.count > 0 ? `(${data.count})` : '';
+
+                if (data.lessons.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <i class="bi bi-lightbulb"></i>
+                            <p>No lessons yet. Run the extraction pipeline to generate them.</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                container.innerHTML = data.lessons.map(l => {
+                    const catColors = {
+                        'technical_approach': 'badge-research',
+                        'workflow': 'badge-configure',
+                        'debugging': 'badge-debug',
+                        'tool_usage': 'badge-qa',
+                        'environment': 'badge-other',
+                    };
+                    const catClass = catColors[l.category] || 'badge-other';
+                    const stars = '★'.repeat(l.importance) + '☆'.repeat(5 - l.importance);
+                    
+                    const statusColors = {
+                        'draft': { border: 'var(--text-muted)', opacity: '0.6', badge: 'DRAFT', badgeStyle: 'border-color: var(--warning); color: var(--warning);' },
+                        'active': { border: 'var(--accent)', opacity: '1', badge: '', badgeStyle: '' },
+                        'rejected': { border: 'var(--danger)', opacity: '0.5', badge: 'REJECTED', badgeStyle: 'border-color: var(--danger); color: var(--danger);' },
+                        'archived': { border: 'var(--text-muted)', opacity: '0.5', badge: 'ARCHIVED', badgeStyle: 'border-color: var(--text-muted); color: var(--text-muted);' },
+                    };
+                    const sc = statusColors[l.status] || statusColors.draft;
+                    
+                    // Build action buttons based on status
+                    let actions = '';
+                    if (l.status === 'draft') {
+                        actions = `
+                            <button class="skill-btn" onclick="setLessonStatus(${l.id}, 'active')" style="font-size:0.75rem; border-color: var(--success); color: var(--success);">✅ Activate</button>
+                            <button class="skill-btn" onclick="setLessonStatus(${l.id}, 'rejected')" style="font-size:0.75rem; border-color: var(--danger); color: var(--danger);">❌ Reject</button>
+                        `;
+                    } else if (l.status === 'active') {
+                        actions = `
+                            <button class="skill-btn" onclick="setLessonStatus(${l.id}, 'archived')" style="font-size:0.75rem;">🙈 Archive</button>
+                        `;
+                    } else if (l.status === 'rejected') {
+                        actions = `
+                            <button class="skill-btn" onclick="setLessonStatus(${l.id}, 'draft')" style="font-size:0.75rem;">📌 Restore as Draft</button>
+                            <button class="skill-btn" onclick="deleteLesson(${l.id})" style="font-size:0.75rem; color: var(--danger); border-color: var(--danger);">🗑️ Delete</button>
+                        `;
+                    } else if (l.status === 'archived') {
+                        actions = `
+                            <button class="skill-btn" onclick="setLessonStatus(${l.id}, 'active')" style="font-size:0.75rem;">📌 Restore</button>
+                            <button class="skill-btn" onclick="deleteLesson(${l.id})" style="font-size:0.75rem; color: var(--danger); border-color: var(--danger);">🗑️ Delete</button>
+                        `;
+                    }
+                    
+                    return `
+                        <div class="failure-card" style="border-left-color: ${sc.border}; opacity: ${sc.opacity};">
+                            <div class="failure-meta">
+                                <span class="failure-badge ${catClass}">${l.category}</span>
+                                <span class="failure-badge badge-freq" title="Importance (1-5)">${stars}</span>
+                                ${sc.badge ? `<span class="failure-badge badge-freq" style="${sc.badgeStyle}">${sc.badge}</span>` : ''}
+                            </div>
+                            <div class="failure-pattern-text">${escapeHtml(l.lesson)}</div>
+                            ${l.context ? `<div class="skill-source" style="margin-top: 6px;">📎 ${escapeHtml(l.context)}</div>` : ''}
+                            <div style="margin-top: 10px; display: flex; gap: 6px;">
+                                ${actions}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (e) {
+                container.innerHTML = `<div class="error-msg">Failed to load lessons: ${e.message}</div>`;
+            }
+        }
+
+        async function setLessonStatus(id, status) {
+            try {
+                await window.omnideck.invoke('update_lesson', { lesson_id: id, status: status });
+                loadLessons();
+            } catch (e) {
+                console.error('Failed to update lesson:', e);
+            }
+        }
+
+        async function deleteLesson(id) {
+            if (!confirm('Delete this lesson?')) return;
+            try {
+                await window.omnideck.invoke('delete_lesson', { lesson_id: id });
+                loadLessons();
+            } catch (e) {
+                console.error('Failed to delete lesson:', e);
+            }
+        }
+
+        // ─── Skills Tab ──────────────────────────────────────────
+
+        let currentSkillFilter = '';
+        let skillsLoaded = false;
+        let skillSearchTimer = null;
+
+        // Skill search input handler
+        document.getElementById('skill-search-input').addEventListener('input', (e) => {
+            clearTimeout(skillSearchTimer);
+            const query = e.target.value.trim();
+            skillSearchTimer = setTimeout(() => {
+                if (query.length >= 2) {
+                    searchSkills(query);
+                } else {
+                    loadSkills();
+                }
+            }, 300);
+        });
+
+        async function searchSkills(query) {
+            const container = document.getElementById('skills-container');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Searching skills...</p></div>';
+            
+            try {
+                const result = await window.omnideck.invoke('search_skills', { query, limit: 20 });
+                
+                if (result.error) {
+                    container.innerHTML = `<div class="error-msg">${result.error}</div>`;
+                    return;
+                }
+                
+                if (!result.results || result.results.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <i class="bi bi-emoji-frown"></i>
+                            <p>No skills found for "${escapeHtml(query)}"</p>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                container.innerHTML = `
+                    <div class="results-header">
+                        ${result.results.length} skills matching "${escapeHtml(query)}" (from ${result.total_skills_searched} total)
+                    </div>
+                    ${result.results.map(s => {
+                        const typeClass = `badge-${(s.task_type || 'other').split(' ')[0]}`;
+                        const diffClass = `badge-${s.difficulty || 'medium'}`;
+                        return `
+                            <div class="skill-card" onclick="viewConsolidatedSkill(${s.skill_id})">
+                                <div class="skill-header">
+                                    <div>
+                                        <div class="skill-title">${escapeHtml(s.skill_title)}</div>
+                                        <div class="skill-source">${escapeHtml(s.conv_title)} · ${s.date}</div>
+                                    </div>
+                                    <div class="skill-badges">
+                                        <span class="skill-badge ${typeClass}">${s.task_type || 'other'}</span>
+                                        <span class="skill-badge ${diffClass}">${s.difficulty || 'medium'}</span>
+                                        <span class="result-similarity">${(s.similarity * 100).toFixed(0)}%</span>
+                                    </div>
+                                </div>
+                                <div class="skill-problem">${escapeHtml(s.problem || '').substring(0, 200)}</div>
+                            </div>
+                        `;
+                    }).join('')}
+                `;
+            } catch (e) {
+                container.innerHTML = `<div class="error-msg">Search failed: ${e.message}</div>`;
+            }
+        }
+
+        async function loadSkills() {
+            const container = document.getElementById('skills-container');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading skills...</p></div>';
+            
+            try {
+                // Load consolidated skills
+                const data = await window.omnideck.invoke('list_consolidated_skills', { limit: 100 });
+                
+                // Update process bar
+                const status = await window.omnideck.invoke('get_extraction_status');
+                const infoEl = document.getElementById('skill-process-info');
+                infoEl.textContent = `${status.consolidated_skills} skills · ${status.failure_patterns} failure patterns · ${status.clusters} clusters`;
+                document.getElementById('process-skills-btn').style.display = 'none';
+                
+                // Update badge
+                const badge = document.getElementById('skills-count-badge');
+                badge.textContent = status.consolidated_skills > 0 ? `(${status.consolidated_skills})` : '';
+
+                if (data.skills.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <i class="bi bi-clipboard-check"></i>
+                            <p>No consolidated skills yet. Run extraction.py to generate them.</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                container.innerHTML = data.skills.map(s => {
+                    const typeClass = `badge-${(s.task_type || 'other').split(' ')[0]}`;
+                    const diffClass = `badge-${s.difficulty || 'medium'}`;
+                    const fpCount = (s.failure_patterns || []).length;
+                    return `
+                        <div class="skill-card" onclick="viewConsolidatedSkill(${s.id})">
+                            <div class="skill-header">
+                                <div>
+                                    <div class="skill-title">${escapeHtml(s.skill_title)}</div>
+                                    <div class="skill-source">${(s.conversation_ids || []).length} conversations · ${fpCount} failure patterns</div>
+                                </div>
+                                <div class="skill-badges">
+                                    <span class="skill-badge ${typeClass}">${s.task_type || 'other'}</span>
+                                    <span class="skill-badge ${diffClass}">${s.difficulty || 'medium'}</span>
+                                    <span class="skill-badge badge-medium">★${s.reusability || '?'}</span>
+                                </div>
+                            </div>
+                            <div class="skill-problem">${escapeHtml(s.problem || '').substring(0, 200)}</div>
+                        </div>
+                    `;
+                }).join('');
+                
+                skillsLoaded = true;
+            } catch (e) {
+                container.innerHTML = `<div class="error-msg">Failed to load skills: ${e.message}</div>`;
+            }
+        }
+
+        function filterSkills(type) {
+            currentSkillFilter = type;
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            event.target.classList.add('active');
+            loadSkills();
+        }
+
+        async function viewConsolidatedSkill(skillId) {
+            const container = document.getElementById('skills-container');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading skill...</p></div>';
+            
+            try {
+                const skill = await window.omnideck.invoke('get_consolidated_skill', { skill_id: skillId });
+                
+                if (skill.error) {
+                    container.innerHTML = `<div class="error-msg">${skill.error}</div>`;
+                    return;
+                }
+
+                const fpsHtml = (skill.failure_patterns || []).map(fp => `
+                    <div class="failure-card" style="margin-top: 8px;">
+                        <div class="failure-meta">
+                            <span class="failure-badge badge-warn">⚠ anti-pattern</span>
+                        </div>
+                        <div class="failure-pattern-text">${escapeHtml(fp.pattern_text || '')}</div>
+                        ${fp.recovery ? `
+                            <div class="failure-recovery">
+                                <i class="bi bi-arrow-right-circle"></i>
+                                <span>${escapeHtml(fp.recovery)}</span>
+                            </div>
+                        ` : ''}
+                    </div>
+                `).join('');
+
+                const convsHtml = (skill.conversations || []).map(c => 
+                    `<div class="skill-source">• ${escapeHtml(c.title)} (${c.date})</div>`
+                ).join('');
+
+                container.innerHTML = `
+                    <div class="skill-detail">
+                        <div class="detail-header">
+                            <div>
+                                <div class="detail-title">${escapeHtml(skill.skill_title)}</div>
+                                <div class="detail-meta">
+                                    <span><i class="bi bi-tag"></i> ${skill.task_type}</span>
+                                    <span><i class="bi bi-bar-chart"></i> ${skill.difficulty}</span>
+                                    <span><i class="bi bi-star"></i> reusability ${skill.reusability}</span>
+                                    <span><i class="bi bi-collection"></i> ${(skill.conversations || []).length} conversations</span>
+                                </div>
+                            </div>
+                            <button class="back-btn" onclick="loadSkills()">
+                                <i class="bi bi-arrow-left"></i> Back
+                            </button>
+                        </div>
+                        
+                        <div class="skill-section">
+                            <h3>Problem</h3>
+                            <pre>${escapeHtml(skill.problem || 'N/A')}</pre>
+                        </div>
+                        
+                        <div class="skill-section">
+                            <h3>Happy Path</h3>
+                            <pre>${escapeHtml(skill.happy_path || 'N/A')}</pre>
+                        </div>
+                        
+                        <div class="skill-section">
+                            <h3>Pitfalls</h3>
+                            <pre>${escapeHtml(skill.pitfalls || 'N/A')}</pre>
+                        </div>
+                        
+                        ${fpsHtml ? `<div class="skill-section"><h3>Failure Patterns (${(skill.failure_patterns || []).length})</h3>${fpsHtml}</div>` : ''}
+                        
+                        <div class="skill-section">
+                            <h3>Notes</h3>
+                            <pre>${escapeHtml(skill.notes || 'N/A')}</pre>
+                        </div>
+                        
+                        ${convsHtml ? `<div class="skill-section"><h3>Source Conversations</h3>${convsHtml}</div>` : ''}
+                        
+                        <div class="skill-actions">
+                            <button class="skill-btn skill-btn-primary" onclick="loadConsolidatedIntoChat(${skillId})">
+                                <i class="bi bi-chat"></i> Load into Chat
+                            </button>
+                        </div>
+                    </div>
+                `;
+            } catch (e) {
+                container.innerHTML = `<div class="error-msg">Failed to load: ${e.message}</div>`;
+            }
+        }
+
+        function loadConsolidatedIntoChat(skillId) {
+            window.omnideck.invoke('get_consolidated_skill', { skill_id: skillId }).then(skill => {
+                const fps = (skill.failure_patterns || []).map(fp => `- ${fp.pattern_text}${fp.recovery ? ' → ' + fp.recovery : ''}`).join('\n');
+                const context = `Here's a consolidated skill from ${skill.conversations?.length || 0} past conversations:\n\n**Problem:** ${skill.problem}\n\n**Happy Path:**\n${skill.happy_path}\n\n**Pitfalls:**\n${skill.pitfalls}\n\n**Failure Patterns:**\n${fps}\n\n**Notes:**\n${skill.notes}\n\nPlease follow this approach.`;
+                window.omnideck.chat.compose({ text: context });
+            });
+        }
+
+        // ─── Failures Tab ─────────────────────────────────────────
+
+        async function loadFailures() {
+            const container = document.getElementById('failures-container');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading failure patterns...</p></div>';
+            
+            try {
+                const data = await window.omnideck.invoke('list_failure_patterns');
+                
+                const infoEl = document.getElementById('failure-process-info');
+                infoEl.textContent = `${data.count} failure patterns extracted`;
+                document.getElementById('failures-count-badge').textContent = data.count > 0 ? `(${data.count})` : '';
+
+                if (data.patterns.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            <p>No failure patterns yet. Run extraction.py --failures to generate them.</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                container.innerHTML = data.patterns.map(p => `
+                    <div class="failure-card">
+                        <div class="failure-meta">
+                            <span class="failure-badge badge-warn">⚠ anti-pattern</span>
+                            <span class="failure-badge badge-type">${p.failure_type}</span>
+                            ${p.frequency > 1 ? `<span class="failure-badge badge-freq">seen ${p.frequency}x</span>` : ''}
+                            ${p.context ? `<span class="failure-badge badge-freq">${escapeHtml(p.context)}</span>` : ''}
+                        </div>
+                        <div class="failure-pattern-text">${escapeHtml(p.pattern_text)}</div>
+                        ${p.recovery ? `
+                            <div class="failure-recovery">
+                                <i class="bi bi-arrow-right-circle"></i>
+                                <span>${escapeHtml(p.recovery)}</span>
+                            </div>
+                        ` : ''}
+                    </div>
+                `).join('');
+            } catch (e) {
+                container.innerHTML = `<div class="error-msg">Failed to load: ${e.message}</div>`;
+            }
+        }
+    </script>
+</body>
+</html>

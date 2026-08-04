@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Unified Hub — Calendar & Email</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-brand">
+        <span class="header-icon">📅</span>
+        <h1>Unified Hub</h1>
+      </div>
+      <nav class="tab-nav">
+        <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+        <button class="tab-btn" data-tab="calendar">Calendar</button>
+        <button class="tab-btn" data-tab="email">Email</button>
+      </nav>
+      <button class="refresh-btn" id="refreshBtn" title="Refresh">↻</button>
+    </header>
+
+    <!-- Loading overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+      <div class="spinner"></div>
+      <p id="loadingText">Loading…</p>
+    </div>
+
+    <!-- Error banner -->
+    <div class="error-banner" id="errorBanner" style="display:none">
+      <span id="errorText"></span>
+      <button onclick="document.getElementById('errorBanner').style.display='none'">×</button>
+    </div>
+
+    <!-- Dashboard Tab -->
+    <section class="tab-content active" id="tab-dashboard">
+      <div class="dashboard-grid">
+        <div class="dashboard-col">
+          <h2 class="section-title">📅 Upcoming Events</h2>
+          <div id="dashboardEvents" class="card-list"></div>
+        </div>
+        <div class="dashboard-col">
+          <h2 class="section-title">✉️ Recent Emails</h2>
+          <div id="dashboardMessages" class="card-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Calendar Tab -->
+    <section class="tab-content" id="tab-calendar">
+      <div class="panel-bar">
+        <select id="calIntegrationSelect" class="select-input"></select>
+        <select id="calCalendarSelect" class="select-input" disabled>
+          <option value="">Select a calendar…</option>
+        </select>
+        <label class="range-label">Days ahead: <input type="number" id="calDaysForward" value="30" min="1" max="365" class="number-input"></label>
+        <button class="btn btn-primary" id="calLoadBtn">Load Events</button>
+        <button class="btn btn-secondary" id="calCreateBtn">+ New Event</button>
+      </div>
+      <div id="calendarEvents" class="card-list"></div>
+    </section>
+
+    <!-- Email Tab -->
+    <section class="tab-content" id="tab-email">
+      <div class="email-layout">
+        <div class="email-sidebar">
+          <select id="emailIntegrationSelect" class="select-input"></select>
+          <select id="emailFolderSelect" class="select-input">
+            <option value="INBOX">INBOX</option>
+          </select>
+          <div class="search-bar">
+            <input type="text" id="emailSearchInput" placeholder="Search messages…" class="text-input">
+            <button class="btn btn-small" id="emailSearchBtn">Search</button>
+          </div>
+          <button class="btn btn-secondary btn-full" id="emailComposeBtn">✏️ Compose</button>
+          <div id="emailList" class="email-list"></div>
+        </div>
+        <div class="email-detail" id="emailDetail">
+          <div class="email-empty">Select a message to read</div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Create Event Modal -->
+  <div class="modal-overlay" id="createEventModal" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Create Event</h2>
+        <button class="modal-close" data-modal="createEventModal">×</button>
+      </div>
+      <div class="modal-body">
+        <label>Integration</label>
+        <select id="eventIntegration" class="select-input"></select>
+        <label>Calendar</label>
+        <select id="eventCalendar" class="select-input"></select>
+        <label>Title</label>
+        <input type="text" id="eventSummary" class="text-input" placeholder="Event title">
+        <label>Start</label>
+        <input type="datetime-local" id="eventStart" class="text-input">
+        <label>End</label>
+        <input type="datetime-local" id="eventEnd" class="text-input">
+        <label>Location (optional)</label>
+        <input type="text" id="eventLocation" class="text-input" placeholder="Event location">
+        <label>Description (optional)</label>
+        <textarea id="eventDescription" class="text-area" placeholder="Event description"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-modal="createEventModal">Cancel</button>
+        <button class="btn btn-primary" id="eventCreateBtn">Create Event</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Compose Email Modal -->
+  <div class="modal-overlay" id="composeModal" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Compose Email</h2>
+        <button class="modal-close" data-modal="composeModal">×</button>
+      </div>
+      <div class="modal-body">
+        <label>From (Integration)</label>
+        <select id="composeIntegration" class="select-input"></select>
+        <label>To (comma-separated)</label>
+        <input type="text" id="composeTo" class="text-input" placeholder="recipient@example.com">
+        <label>Subject</label>
+        <input type="text" id="composeSubject" class="text-input" placeholder="Email subject">
+        <label>Body</label>
+        <textarea id="composeBody" class="text-area" placeholder="Write your message…" rows="8"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-modal="composeModal">Cancel</button>
+        <button class="btn btn-primary" id="composeSendBtn">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/api/folder-apps/sdk.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

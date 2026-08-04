@@ -1,0 +1,1322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Task Editor</title>
+<script src="/api/custom-apps/sdk.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg-panel: #161b22;
+    --bg-card: #1c2128;
+    --bg-hover: #22272e;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --text-muted: #6e7681;
+    --accent: #2f81f7;
+    --accent-hover: #1f6feb;
+    --green: #3fb950;
+    --red: #f85149;
+    --yellow: #d29922;
+    --purple: #a371f7;
+    --radius: 8px;
+    --shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    overflow: hidden;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  /* Layout */
+  .app {
+    display: flex;
+    height: 100vh;
+  }
+  .sidebar {
+    width: 320px;
+    min-width: 320px;
+    background: var(--bg-panel);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Sidebar */
+  .sidebar-header {
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .sidebar-header h1 {
+    font-size: 16px;
+    font-weight: 600;
+    flex: 1;
+  }
+  .sidebar-header i {
+    font-size: 20px;
+    color: var(--accent);
+  }
+  .sidebar-search {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .sidebar-search input {
+    width: 100%;
+    padding: 6px 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-size: 13px;
+    outline: none;
+  }
+  .sidebar-search input:focus {
+    border-color: var(--accent);
+  }
+  .routine-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 0;
+  }
+  .routine-item {
+    padding: 10px 14px;
+    cursor: pointer;
+    border-bottom: 1px solid rgba(48,54,61,0.5);
+    transition: background 0.15s;
+  }
+  .routine-item:hover {
+    background: var(--bg-hover);
+  }
+  .routine-item.active {
+    background: var(--bg-card);
+    border-left: 3px solid var(--accent);
+    padding-left: 11px;
+  }
+  .routine-item .ri-desc {
+    font-weight: 500;
+    font-size: 13px;
+    margin-bottom: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .routine-item .ri-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 7px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .badge-active { background: rgba(63,185,80,0.15); color: var(--green); }
+  .badge-paused { background: rgba(210,153,34,0.15); color: var(--yellow); }
+  .badge-cron { background: rgba(47,129,247,0.15); color: var(--accent); }
+
+  /* Main panel */
+  .main-header {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .main-header h2 {
+    font-size: 16px;
+    font-weight: 600;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .main-header .actions {
+    display: flex;
+    gap: 8px;
+  }
+  .main-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+  }
+
+  /* Empty state */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-muted);
+    gap: 12px;
+  }
+  .empty-state i {
+    font-size: 48px;
+    opacity: 0.4;
+  }
+  .empty-state p {
+    font-size: 15px;
+  }
+
+  /* Routine meta bar */
+  .routine-meta-bar {
+    display: flex;
+    gap: 16px;
+    padding: 12px 0;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .meta-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .meta-item .label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+  .meta-item .value {
+    font-size: 13px;
+    color: var(--text);
+  }
+  .meta-item .value.editable {
+    cursor: pointer;
+    border-bottom: 1px dashed var(--border);
+  }
+  .meta-item .value.editable:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  /* Task section */
+  .task-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .task-section-header h3 {
+    font-size: 14px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .task-section-header h3 .count {
+    background: var(--bg-card);
+    color: var(--text-dim);
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 12px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .btn:hover {
+    background: var(--bg-hover);
+    border-color: var(--text-muted);
+  }
+  .btn-primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+  }
+  .btn-primary:hover {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+  }
+  .btn-danger {
+    color: var(--red);
+    border-color: rgba(248,81,73,0.3);
+  }
+  .btn-danger:hover {
+    background: rgba(248,81,73,0.1);
+    border-color: var(--red);
+  }
+  .btn-sm {
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+  .btn-icon {
+    padding: 4px 8px;
+  }
+
+  /* Task cards */
+  .task-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .task-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    position: relative;
+  }
+  .task-card:hover {
+    border-color: var(--text-muted);
+  }
+  .task-card.dragging {
+    opacity: 0.5;
+    border-style: dashed;
+  }
+  .task-card.drag-over {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(47,129,247,0.2);
+  }
+  .task-card-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .drag-handle {
+    cursor: grab;
+    color: var(--text-muted);
+    font-size: 16px;
+    padding-top: 2px;
+    user-select: none;
+  }
+  .drag-handle:hover {
+    color: var(--text);
+  }
+  .task-index {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 7px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-dim);
+    min-width: 24px;
+    text-align: center;
+  }
+  .task-body {
+    flex: 1;
+    min-width: 0;
+  }
+  .task-desc {
+    font-weight: 600;
+    font-size: 14px;
+    margin-bottom: 6px;
+    cursor: pointer;
+  }
+  .task-desc:hover {
+    color: var(--accent);
+  }
+  .task-instruction {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    white-space: pre-wrap;
+  }
+  .task-footer {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .task-profile {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(163,113,247,0.12);
+    color: var(--purple);
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .task-profile.none {
+    background: rgba(139,148,158,0.1);
+    color: var(--text-muted);
+  }
+  .task-deps {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .task-deps .dep-chip {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+  }
+  .task-actions {
+    display: flex;
+    gap: 4px;
+    margin-left: auto;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .task-card:hover .task-actions {
+    opacity: 1;
+  }
+
+  /* Modal */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    backdrop-filter: blur(2px);
+  }
+  .modal {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    width: 90%;
+    max-width: 640px;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: var(--shadow);
+  }
+  .modal-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .modal-header h3 {
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .modal-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 20px;
+    padding: 0;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+  }
+  .modal-close:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+  .modal-body {
+    padding: 20px;
+    overflow-y: auto;
+    flex: 1;
+  }
+  .modal-footer {
+    padding: 14px 20px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+  .form-group {
+    margin-bottom: 16px;
+  }
+  .form-group label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
+    margin-bottom: 5px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    width: 100%;
+    padding: 8px 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .form-group input:focus,
+  .form-group select:focus,
+  .form-group textarea:focus {
+    border-color: var(--accent);
+  }
+  .form-group textarea {
+    min-height: 120px;
+    resize: vertical;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  .form-group select {
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%238b949e' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    padding-right: 30px;
+  }
+  .form-row {
+    display: flex;
+    gap: 12px;
+  }
+  .form-row .form-group {
+    flex: 1;
+  }
+  .dep-selector {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    min-height: 40px;
+  }
+  .dep-chip-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .dep-chip-toggle:hover {
+    border-color: var(--text-muted);
+  }
+  .dep-chip-toggle.selected {
+    background: rgba(47,129,247,0.15);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  /* Toast */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    padding: 10px 16px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-weight: 500;
+    z-index: 2000;
+    animation: slideIn 0.2s ease;
+    box-shadow: var(--shadow);
+  }
+  .toast.success {
+    background: rgba(63,185,80,0.15);
+    border: 1px solid var(--green);
+    color: var(--green);
+  }
+  .toast.error {
+    background: rgba(248,81,73,0.15);
+    border: 1px solid var(--red);
+    color: var(--red);
+  }
+  @keyframes slideIn {
+    from { transform: translateY(20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+
+  /* Loading */
+  .loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-muted);
+    gap: 8px;
+  }
+  .spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────
+// State
+// ─────────────────────────────────────────────────────────────────────────
+const state = {
+  routines: [],
+  currentRoutine: null,
+  currentTasks: [],
+  profiles: [],
+  selectedRoutineId: null,
+  loading: false,
+  searchQuery: '',
+};
+
+// ─────────────────────────────────────────────────────────────────────────
+// API helpers
+// ─────────────────────────────────────────────────────────────────────────
+async function api(actionName, params) {
+  const result = await window.omnideck.invoke(actionName, params);
+  return result;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Initialization
+// ─────────────────────────────────────────────────────────────────────────
+async function init() {
+  state.loading = true;
+  render();
+  try {
+    const [routinesRes, profilesRes] = await Promise.all([
+      api('list_routines', {}),
+      api('list_profiles', {}),
+    ]);
+    state.routines = routinesRes.routines || [];
+    state.profiles = profilesRes.profiles || [];
+  } catch (e) {
+    showToast('Failed to load data: ' + e.message, 'error');
+  }
+  state.loading = false;
+  render();
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Actions
+// ─────────────────────────────────────────────────────────────────────────
+async function selectRoutine(id) {
+  state.selectedRoutineId = id;
+  state.loading = true;
+  render();
+  try {
+    const res = await api('get_routine', { routine_id: id });
+    if (res.error) {
+      showToast(res.error, 'error');
+    } else {
+      state.currentRoutine = res.routine;
+      state.currentTasks = res.tasks || [];
+    }
+  } catch (e) {
+    showToast('Failed to load routine: ' + e.message, 'error');
+  }
+  state.loading = false;
+  render();
+}
+
+async function refreshRoutines() {
+  const res = await api('list_routines', {});
+  state.routines = res.routines || [];
+  render();
+}
+
+async function refreshCurrentRoutine() {
+  if (!state.selectedRoutineId) return;
+  const res = await api('get_routine', { routine_id: state.selectedRoutineId });
+  if (!res.error) {
+    state.currentRoutine = res.routine;
+    state.currentTasks = res.tasks || [];
+  }
+  render();
+}
+
+async function handleAddTask(data) {
+  const res = await api('add_task', {
+    routine_id: state.selectedRoutineId,
+    description: data.description,
+    instruction: data.instruction,
+    agent_profile: data.agent_profile || '',
+    depends_on: data.depends_on || [],
+    max_retries: data.max_retries ?? 3,
+  });
+  if (res.error) {
+    showToast(res.error, 'error');
+    return false;
+  }
+  showToast('Task added', 'success');
+  await refreshCurrentRoutine();
+  await refreshRoutines();
+  return true;
+}
+
+async function handleUpdateTask(taskId, data) {
+  const res = await api('update_task', {
+    routine_id: state.selectedRoutineId,
+    task_id: taskId,
+    description: data.description,
+    instruction: data.instruction,
+    agent_profile: data.agent_profile,
+    depends_on: data.depends_on,
+    max_retries: data.max_retries,
+  });
+  if (res.error) {
+    showToast(res.error, 'error');
+    return false;
+  }
+  showToast('Task updated', 'success');
+  await refreshCurrentRoutine();
+  return true;
+}
+
+async function handleDeleteTask(taskId) {
+  const res = await api('delete_task', {
+    routine_id: state.selectedRoutineId,
+    task_id: taskId,
+  });
+  if (res.error) {
+    showToast(res.error, 'error');
+    return;
+  }
+  showToast('Task deleted', 'success');
+  await refreshCurrentRoutine();
+  await refreshRoutines();
+}
+
+async function handleReorder(taskIds) {
+  const res = await api('reorder_tasks', {
+    routine_id: state.selectedRoutineId,
+    task_ids: taskIds,
+  });
+  if (res.error) {
+    showToast(res.error, 'error');
+    await refreshCurrentRoutine();
+    return;
+  }
+  // Update local order immediately
+  const map = {};
+  state.currentTasks.forEach(t => map[t.id] = t);
+  state.currentTasks = taskIds.map(id => map[id]).filter(Boolean);
+  render();
+}
+
+async function handleUpdateRoutine(data) {
+  const res = await api('update_routine', {
+    routine_id: state.selectedRoutineId,
+    description: data.description,
+    cron: data.cron,
+    timezone: data.timezone,
+    status: data.status,
+  });
+  if (res.error) {
+    showToast(res.error, 'error');
+    return false;
+  }
+  showToast('Routine updated', 'success');
+  await refreshCurrentRoutine();
+  await refreshRoutines();
+  return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Toast
+// ─────────────────────────────────────────────────────────────────────────
+function showToast(msg, type = 'success') {
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => {
+    el.style.opacity = '0';
+    el.style.transition = 'opacity 0.3s';
+    setTimeout(() => el.remove(), 300);
+  }, 2500);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Rendering
+// ─────────────────────────────────────────────────────────────────────────
+function render() {
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+
+  if (state.loading && state.routines.length === 0) {
+    app.innerHTML = `<div class="loading"><div class="spinner"></div>Loading...</div>`;
+    return;
+  }
+
+  const layout = document.createElement('div');
+  layout.className = 'app';
+  layout.appendChild(renderSidebar());
+  layout.appendChild(renderMain());
+  app.appendChild(layout);
+}
+
+function renderSidebar() {
+  const sidebar = document.createElement('div');
+  sidebar.className = 'sidebar';
+
+  // Header
+  const header = document.createElement('div');
+  header.className = 'sidebar-header';
+  header.innerHTML = `<i class="bi bi-list-task"></i><h1>Task Editor</h1>`;
+  sidebar.appendChild(header);
+
+  // Search
+  const search = document.createElement('div');
+  search.className = 'sidebar-search';
+  search.innerHTML = `<input type="text" placeholder="Search routines..." id="routine-search">`;
+  sidebar.appendChild(search);
+
+  // List
+  const list = document.createElement('div');
+  list.className = 'routine-list';
+
+  let filtered = state.routines;
+  if (state.searchQuery) {
+    const q = state.searchQuery.toLowerCase();
+    filtered = state.routines.filter(r =>
+      r.description.toLowerCase().includes(q) || r.id.toLowerCase().includes(q)
+    );
+  }
+
+  if (filtered.length === 0) {
+    list.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px;">No routines found</div>`;
+  } else {
+    filtered.forEach(r => {
+      const item = document.createElement('div');
+      item.className = 'routine-item' + (r.id === state.selectedRoutineId ? ' active' : '');
+      const statusBadge = r.status === 'paused'
+        ? `<span class="badge badge-paused">Paused</span>`
+        : `<span class="badge badge-active">Active</span>`;
+      const cronBadge = r.cron ? `<span class="badge badge-cron"><i class="bi bi-clock"></i> ${r.cron}</span>` : '';
+      item.innerHTML = `
+        <div class="ri-desc">${escapeHtml(r.description)}</div>
+        <div class="ri-meta">
+          ${statusBadge}
+          ${cronBadge}
+          <span>${r.task_count} task${r.task_count !== 1 ? 's' : ''}</span>
+        </div>
+      `;
+      item.onclick = () => selectRoutine(r.id);
+      list.appendChild(item);
+    });
+  }
+  sidebar.appendChild(list);
+
+  // Wire up search after DOM attach
+  setTimeout(() => {
+    const input = document.getElementById('routine-search');
+    if (input) {
+      input.value = state.searchQuery;
+      input.oninput = (e) => {
+        state.searchQuery = e.target.value;
+        render();
+        // Re-focus
+        const newInput = document.getElementById('routine-search');
+        if (newInput) { newInput.focus(); newInput.selectionStart = newInput.value.length; }
+      };
+    }
+  }, 0);
+
+  return sidebar;
+}
+
+function renderMain() {
+  const main = document.createElement('div');
+  main.className = 'main';
+
+  if (!state.selectedRoutineId) {
+    main.innerHTML = `
+      <div class="empty-state">
+        <i class="bi bi-list-task"></i>
+        <p>Select a routine to view and edit its tasks</p>
+      </div>
+    `;
+    return main;
+  }
+
+  if (state.loading) {
+    main.innerHTML = `<div class="loading"><div class="spinner"></div>Loading...</div>`;
+    return main;
+  }
+
+  if (!state.currentRoutine) {
+    main.innerHTML = `<div class="empty-state"><p>Routine not found</p></div>`;
+    return main;
+  }
+
+  // Header
+  const header = document.createElement('div');
+  header.className = 'main-header';
+  header.innerHTML = `
+    <h2>${escapeHtml(state.currentRoutine.description)}</h2>
+    <div class="actions">
+      <button class="btn btn-sm" id="btn-edit-routine"><i class="bi bi-gear"></i> Edit Routine</button>
+      <button class="btn btn-primary btn-sm" id="btn-add-task"><i class="bi bi-plus-lg"></i> Add Task</button>
+    </div>
+  `;
+  main.appendChild(header);
+
+  // Content
+  const content = document.createElement('div');
+  content.className = 'main-content';
+
+  // Meta bar
+  const metaBar = document.createElement('div');
+  metaBar.className = 'routine-meta-bar';
+  const statusClass = state.currentRoutine.status === 'paused' ? 'badge-paused' : 'badge-active';
+  metaBar.innerHTML = `
+    <div class="meta-item">
+      <span class="label">Status</span>
+      <span class="value"><span class="badge ${statusClass}">${state.currentRoutine.status}</span></span>
+    </div>
+    <div class="meta-item">
+      <span class="label">Cron</span>
+      <span class="value">${state.currentRoutine.cron ? escapeHtml(state.currentRoutine.cron) : '— (one-shot)'}</span>
+    </div>
+    <div class="meta-item">
+      <span class="label">Timezone</span>
+      <span class="value">${escapeHtml(state.currentRoutine.timezone || 'UTC')}</span>
+    </div>
+    <div class="meta-item">
+      <span class="label">Created</span>
+      <span class="value">${formatDate(state.currentRoutine.created_at)}</span>
+    </div>
+    <div class="meta-item">
+      <span class="label">Last Run</span>
+      <span class="value">${state.currentRoutine.last_run_spawned_at ? formatDate(state.currentRoutine.last_run_spawned_at) : '—'}</span>
+    </div>
+  `;
+  content.appendChild(metaBar);
+
+  // Tasks section
+  const taskSection = document.createElement('div');
+  taskSection.innerHTML = `
+    <div class="task-section-header">
+      <h3><i class="bi bi-list-ol"></i> Tasks <span class="count">${state.currentTasks.length}</span></h3>
+    </div>
+  `;
+
+  if (state.currentTasks.length === 0) {
+    taskSection.innerHTML += `
+      <div style="padding:32px;text-align:center;color:var(--text-muted);background:var(--bg-card);border:1px dashed var(--border);border-radius:var(--radius);">
+        <i class="bi bi-inbox" style="font-size:32px;opacity:0.4;display:block;margin-bottom:8px;"></i>
+        <p>No tasks yet. Click "Add Task" to create one.</p>
+      </div>
+    `;
+  } else {
+    const taskList = document.createElement('div');
+    taskList.className = 'task-list';
+    state.currentTasks.forEach((task, idx) => {
+      taskList.appendChild(renderTaskCard(task, idx));
+    });
+    taskSection.appendChild(taskList);
+  }
+  content.appendChild(taskSection);
+  main.appendChild(content);
+
+  // Wire up buttons
+  setTimeout(() => {
+    document.getElementById('btn-add-task')?.addEventListener('click', () => showTaskModal(null));
+    document.getElementById('btn-edit-routine')?.addEventListener('click', () => showRoutineModal());
+  }, 0);
+
+  return main;
+}
+
+function renderTaskCard(task, idx) {
+  const card = document.createElement('div');
+  card.className = 'task-card';
+  card.draggable = true;
+  card.dataset.taskId = task.id;
+
+  const profile = task.agent_profile
+    ? `<span class="task-profile"><i class="bi bi-robot"></i> ${escapeHtml(task.agent_profile_name || task.agent_profile)}</span>`
+    : `<span class="task-profile none"><i class="bi bi-robot"></i> No profile</span>`;
+
+  // Dependencies
+  const depTasks = (task.depends_on || []).map(depId => {
+    const depTask = state.currentTasks.find(t => t.id === depId);
+    const label = depTask ? depTask.description.substring(0, 30) : depId.substring(0, 8);
+    return `<span class="dep-chip">${escapeHtml(label)}</span>`;
+  });
+  const depsHtml = depTasks.length > 0
+    ? `<span class="task-deps"><i class="bi bi-diagram-3"></i> depends on: ${depTasks.join(', ')}</span>`
+    : '';
+
+  card.innerHTML = `
+    <div class="task-card-head">
+      <span class="drag-handle" title="Drag to reorder"><i class="bi bi-grip-vertical"></i></span>
+      <span class="task-index">${idx + 1}</span>
+      <div class="task-body">
+        <div class="task-desc" data-action="edit">${escapeHtml(task.description)}</div>
+        <div class="task-instruction">${escapeHtml(task.instruction)}</div>
+        <div class="task-footer">
+          ${profile}
+          ${depsHtml}
+          <div class="task-actions">
+            <button class="btn btn-sm" data-action="edit"><i class="bi bi-pencil"></i> Edit</button>
+            <button class="btn btn-sm btn-danger" data-action="delete"><i class="bi bi-trash"></i> Delete</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Click to edit (description click)
+  card.querySelector('.task-desc[data-action="edit"]').addEventListener('click', (e) => {
+    e.stopPropagation();
+    showTaskModal(task);
+  });
+
+  // Edit button
+  card.querySelector('button[data-action="edit"]').addEventListener('click', (e) => {
+    e.stopPropagation();
+    showTaskModal(task);
+  });
+
+  // Delete
+  card.querySelector('button[data-action="delete"]').addEventListener('click', (e) => {
+    e.stopPropagation();
+    showConfirmDelete(task);
+  });
+
+  // Drag and drop
+  card.addEventListener('dragstart', (e) => {
+    card.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', task.id);
+  });
+  card.addEventListener('dragend', () => {
+    card.classList.remove('dragging');
+    document.querySelectorAll('.task-card').forEach(c => c.classList.remove('drag-over'));
+  });
+  card.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    card.classList.add('drag-over');
+  });
+  card.addEventListener('dragleave', () => {
+    card.classList.remove('drag-over');
+  });
+  card.addEventListener('drop', (e) => {
+    e.preventDefault();
+    card.classList.remove('drag-over');
+    const draggedId = e.dataTransfer.getData('text/plain');
+    if (draggedId === task.id) return;
+
+    // Reorder
+    const ids = state.currentTasks.map(t => t.id);
+    const fromIdx = ids.indexOf(draggedId);
+    const toIdx = ids.indexOf(task.id);
+    if (fromIdx === -1 || toIdx === -1) return;
+
+    ids.splice(fromIdx, 1);
+    ids.splice(toIdx, 0, draggedId);
+    handleReorder(ids);
+  });
+
+  return card;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Modals
+// ─────────────────────────────────────────────────────────────────────────
+function showTaskModal(task) {
+  const isEdit = !!task;
+  const profiles = state.profiles;
+  const otherTasks = state.currentTasks.filter(t => t.id !== (task?.id || ''));
+
+  const profileOptions = profiles.map(p =>
+    `<option value="${p.id}" ${task?.agent_profile === p.id ? 'selected' : ''}>${escapeHtml(p.name)} (${escapeHtml(p.model)})</option>`
+  ).join('');
+
+  const depCheckboxes = otherTasks.map(t => `
+    <div class="dep-chip-toggle ${(task?.depends_on || []).includes(t.id) ? 'selected' : ''}" data-dep-id="${t.id}">
+      <i class="bi bi-check2"></i> ${escapeHtml(t.description.substring(0, 40))}
+    </div>
+  `).join('');
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h3>${isEdit ? 'Edit Task' : 'Add Task'}</h3>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Description</label>
+          <input type="text" id="task-desc" value="${task ? escapeHtml(task.description) : ''}" placeholder="Short description of what this task does">
+        </div>
+        <div class="form-group">
+          <label>Instruction</label>
+          <textarea id="task-instruction" placeholder="Full self-contained agent prompt...">${task ? escapeHtml(task.instruction) : ''}</textarea>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Agent Profile</label>
+            <select id="task-profile">
+              <option value="">— None —</option>
+              ${profileOptions}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Max Retries</label>
+            <input type="number" id="task-retries" value="${task?.max_retries ?? 3}" min="0" max="10">
+          </div>
+        </div>
+        ${otherTasks.length > 0 ? `
+        <div class="form-group">
+          <label>Depends On</label>
+          <div class="dep-selector" id="dep-selector">
+            ${depCheckboxes}
+          </div>
+        </div>` : ''}
+      </div>
+      <div class="modal-footer">
+        <button class="btn" id="modal-cancel">Cancel</button>
+        <button class="btn btn-primary" id="modal-save">${isEdit ? 'Save Changes' : 'Add Task'}</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  // Close handlers
+  overlay.querySelector('.modal-close').onclick = () => overlay.remove();
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+
+  // Dep toggles
+  overlay.querySelectorAll('.dep-chip-toggle').forEach(chip => {
+    chip.onclick = () => chip.classList.toggle('selected');
+  });
+
+  // Save
+  overlay.querySelector('#modal-save').onclick = async () => {
+    const desc = overlay.querySelector('#task-desc').value.trim();
+    const instr = overlay.querySelector('#task-instruction').value.trim();
+    const profile = overlay.querySelector('#task-profile').value;
+    const retries = parseInt(overlay.querySelector('#task-retries').value) || 3;
+    const deps = Array.from(overlay.querySelectorAll('.dep-chip-toggle.selected'))
+      .map(c => c.dataset.depId);
+
+    if (!desc) { showToast('Description is required', 'error'); return; }
+    if (!instr) { showToast('Instruction is required', 'error'); return; }
+
+    const data = {
+      description: desc,
+      instruction: instr,
+      agent_profile: profile,
+      depends_on: deps,
+      max_retries: retries,
+    };
+
+    overlay.querySelector('#modal-save').disabled = true;
+    overlay.querySelector('#modal-save').textContent = 'Saving...';
+
+    let success;
+    if (isEdit) {
+      success = await handleUpdateTask(task.id, data);
+    } else {
+      success = await handleAddTask(data);
+    }
+
+    if (success) overlay.remove();
+    else {
+      overlay.querySelector('#modal-save').disabled = false;
+      overlay.querySelector('#modal-save').textContent = isEdit ? 'Save Changes' : 'Add Task';
+    }
+  };
+
+  overlay.querySelector('#modal-cancel').onclick = () => overlay.remove();
+
+  // Focus
+  setTimeout(() => overlay.querySelector('#task-desc')?.focus(), 50);
+}
+
+function showRoutineModal() {
+  const r = state.currentRoutine;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Edit Routine</h3>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Description</label>
+          <input type="text" id="routine-desc" value="${escapeHtml(r.description)}">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Cron Expression</label>
+            <input type="text" id="routine-cron" value="${escapeHtml(r.cron || '')}" placeholder="e.g. 0 10 * * * (leave empty for one-shot)">
+          </div>
+          <div class="form-group">
+            <label>Timezone</label>
+            <input type="text" id="routine-tz" value="${escapeHtml(r.timezone || 'UTC')}" placeholder="America/Chicago">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Status</label>
+          <select id="routine-status">
+            <option value="active" ${r.status === 'active' ? 'selected' : ''}>Active</option>
+            <option value="paused" ${r.status === 'paused' ? 'selected' : ''}>Paused</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" id="modal-cancel">Cancel</button>
+        <button class="btn btn-primary" id="modal-save">Save Changes</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  overlay.querySelector('.modal-close').onclick = () => overlay.remove();
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+
+  overlay.querySelector('#modal-save').onclick = async () => {
+    const data = {
+      description: overlay.querySelector('#routine-desc').value.trim(),
+      cron: overlay.querySelector('#routine-cron').value.trim(),
+      timezone: overlay.querySelector('#routine-tz').value.trim(),
+      status: overlay.querySelector('#routine-status').value,
+    };
+    overlay.querySelector('#modal-save').disabled = true;
+    overlay.querySelector('#modal-save').textContent = 'Saving...';
+    const success = await handleUpdateRoutine(data);
+    if (success) overlay.remove();
+    else {
+      overlay.querySelector('#modal-save').disabled = false;
+      overlay.querySelector('#modal-save').textContent = 'Save Changes';
+    }
+  };
+  overlay.querySelector('#modal-cancel').onclick = () => overlay.remove();
+}
+
+function showConfirmDelete(task) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:420px;">
+      <div class="modal-header">
+        <h3>Delete Task?</h3>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="color:var(--text-dim);">Are you sure you want to delete <strong style="color:var(--text);">${escapeHtml(task.description)}</strong>?</p>
+        <p style="color:var(--text-muted);font-size:12px;margin-top:8px;">This will also remove it from other tasks' dependencies. This cannot be undone.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" id="del-cancel">Cancel</button>
+        <button class="btn btn-danger" id="del-confirm"><i class="bi bi-trash"></i> Delete</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  overlay.querySelector('.modal-close').onclick = () => overlay.remove();
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  overlay.querySelector('#del-cancel').onclick = () => overlay.remove();
+  overlay.querySelector('#del-confirm').onclick = async () => {
+    overlay.remove();
+    await handleDeleteTask(task.id);
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Utilities
+// ─────────────────────────────────────────────────────────────────────────
+function escapeHtml(str) {
+  if (!str) return '';
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function formatDate(iso) {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
+      ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  } catch {
+    return iso;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Start
+// ─────────────────────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>

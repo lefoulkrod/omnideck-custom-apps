@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Drawboard</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app">
+  <!-- Toolbar -->
+  <div id="toolbar">
+    <div class="tool-group">
+      <button class="tool-btn active" data-tool="select" title="Select (V)"><i class="bi bi-cursor"></i></button>
+      <button class="tool-btn" data-tool="pan" title="Pan (H)"><i class="bi bi-arrows-move"></i></button>
+    </div>
+    <div class="tool-group">
+      <button class="tool-btn" data-tool="rectangle" title="Rectangle (R)"><i class="bi bi-square"></i></button>
+      <button class="tool-btn" data-tool="ellipse" title="Ellipse (O)"><i class="bi bi-circle"></i></button>
+      <button class="tool-btn" data-tool="diamond" title="Diamond (D)"><i class="bi bi-diamond"></i></button>
+      <button class="tool-btn" data-tool="line" title="Line (L)"><i class="bi bi-dash-lg"></i></button>
+      <button class="tool-btn" data-tool="arrow" title="Arrow (A)"><i class="bi bi-arrow-right"></i></button>
+      <button class="tool-btn" data-tool="text" title="Text (T)"><i class="bi bi-fonts"></i></button>
+      <button class="tool-btn" data-tool="freehand" title="Freehand (P)"><i class="bi bi-pencil"></i></button>
+    </div>
+    <div class="tool-group">
+      <span class="toolbar-label">Stroke</span>
+      <div class="color-swatch active" data-color="#1e1e1e" style="background:#1e1e1e"></div>
+      <div class="color-swatch" data-color="#e03131" style="background:#e03131"></div>
+      <div class="color-swatch" data-color="#2f9e44" style="background:#2f9e44"></div>
+      <div class="color-swatch" data-color="#1971c2" style="background:#1971c2"></div>
+      <div class="color-swatch" data-color="#f08c00" style="background:#f08c00"></div>
+      <div class="color-swatch" data-color="#9c36b5" style="background:#9c36b5"></div>
+    </div>
+    <div class="tool-group">
+      <span class="toolbar-label">Fill</span>
+      <div class="color-swatch active" data-fill="transparent" style="background:transparent;border:2px dashed #ccc" title="No fill"></div>
+      <div class="color-swatch" data-fill="#ffffff" style="background:#ffffff;border:1px solid #ccc"></div>
+      <div class="color-swatch" data-fill="#fff9bf" style="background:#fff9bf"></div>
+      <div class="color-swatch" data-fill="#d0ebff" style="background:#d0ebff"></div>
+      <div class="color-swatch" data-fill="#d3f9d8" style="background:#d3f9d8"></div>
+      <div class="color-swatch" data-fill="#ffe0e0" style="background:#ffe0e0"></div>
+    </div>
+    <div class="tool-group">
+      <span class="toolbar-label">Width</span>
+      <div class="stroke-opt" data-width="1"><div class="dot" style="width:4px;height:4px"></div></div>
+      <div class="stroke-opt active" data-width="2"><div class="dot" style="width:7px;height:7px"></div></div>
+      <div class="stroke-opt" data-width="4"><div class="dot" style="width:12px;height:12px"></div></div>
+    </div>
+    <div class="toolbar-spacer"></div>
+    <div class="tool-group" style="border-right:none">
+      <button class="toolbar-action" id="btn-undo" title="Undo (Ctrl+Z)"><i class="bi bi-arrow-counterclockwise"></i> Undo</button>
+      <button class="toolbar-action danger" id="btn-clear"><i class="bi bi-trash"></i> Clear</button>
+      <button class="toolbar-action" id="btn-save"><i class="bi bi-save"></i> Save</button>
+      <button class="toolbar-action" id="btn-load"><i class="bi bi-folder2-open"></i> Load</button>
+      <button class="toolbar-action" id="btn-export"><i class="bi bi-download"></i> Export SVG</button>
+      <button class="toolbar-action primary" id="btn-chat"><i class="bi bi-chat-dots"></i> Ask Agent</button>
+    </div>
+  </div>
+
+  <!-- Canvas -->
+  <div id="canvas-wrap" class="tool-select">
+    <svg id="svg-canvas" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+          <polygon points="0 0, 10 3, 0 6" fill="currentColor" />
+        </marker>
+      </defs>
+      <g id="viewport-group"></g>
+    </svg>
+
+    <!-- Zoom controls -->
+    <div id="zoom-controls">
+      <div class="zoom-btn" id="zoom-in" title="Zoom in"><i class="bi bi-plus"></i></div>
+      <div id="zoom-level">100%</div>
+      <div class="zoom-btn" id="zoom-out" title="Zoom out"><i class="bi bi-dash"></i></div>
+      <div class="zoom-btn" id="zoom-fit" title="Reset view"><i class="bi bi-arrows-fullscreen"></i></div>
+    </div>
+
+  </div>
+
+  <!-- Status bar -->
+  <div id="status-bar">
+    <div class="dot" id="sync-dot"></div>
+    <span id="sync-text">Synced</span>
+    <span id="shape-count">0 shapes</span>
+    <span style="flex:1"></span>
+    <span id="cursor-pos">0, 0</span>
+  </div>
+</div>
+
+<div id="load-overlay" class="modal-overlay">
+  <div id="load-dialog" class="modal-dialog">
+    <div class="modal-header">
+      <h3>Load Drawing</h3>
+      <button class="modal-close" id="load-dialog-close">&times;</button>
+    </div>
+    <div id="load-dialog-list" class="modal-body" style="padding:8px"></div>
+  </div>
+</div>
+
+<div id="confirm-overlay" class="modal-overlay">
+  <div class="modal-dialog sm">
+    <div class="modal-header">
+      <h3 id="confirm-title">Confirm</h3>
+    </div>
+    <div class="modal-body">
+      <p id="confirm-message"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="modal-btn" id="confirm-cancel">Cancel</button>
+      <button class="modal-btn danger" id="confirm-ok">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div id="prompt-overlay" class="modal-overlay">
+  <div class="modal-dialog sm">
+    <div class="modal-header">
+      <h3 id="prompt-title">Edit</h3>
+    </div>
+    <div class="modal-body">
+      <p id="prompt-message"></p>
+      <input type="text" class="modal-input" id="prompt-input" />
+    </div>
+    <div class="modal-footer">
+      <button class="modal-btn" id="prompt-cancel">Cancel</button>
+      <button class="modal-btn primary" id="prompt-ok">OK</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<script src="/api/custom-apps/sdk.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

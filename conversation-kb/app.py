@@ -50,7 +50,31 @@ def get_db():
     """Get a database connection."""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    _ensure_lessons_table(conn)
     return conn
+
+def _ensure_lessons_table(conn):
+    """Create the lessons table if it doesn't exist."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS lessons (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            lesson TEXT NOT NULL,
+            category TEXT DEFAULT 'technical_approach',
+            context TEXT DEFAULT '',
+            importance INTEGER DEFAULT 3,
+            active INTEGER DEFAULT 1,
+            status TEXT DEFAULT 'draft',
+            created_at REAL,
+            updated_at REAL
+        )
+    """)
+    # Migrate old active column to status if needed
+    try:
+        conn.execute("ALTER TABLE lessons ADD COLUMN status TEXT DEFAULT 'draft'")
+    except:
+        pass
+    conn.execute("UPDATE lessons SET status='active' WHERE active = 1 AND (status IS NULL OR status = 'draft')")
+    conn.commit()
 
 
 def embed_query(text):
@@ -88,6 +112,7 @@ def get_stats():
         total_chunks = conn.execute("SELECT COUNT(*) FROM search_embeddings").fetchone()[0]
         total_skills = conn.execute("SELECT COUNT(*) FROM skills").fetchone()[0]
         total_memories = conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+        total_lessons = conn.execute("SELECT COUNT(*) FROM lessons").fetchone()[0]
         
         date_range = conn.execute(
             "SELECT MIN(date) as min_date, MAX(date) as max_date FROM conversations"
@@ -108,6 +133,7 @@ def get_stats():
             "total_chunks": total_chunks,
             "total_skills": total_skills,
             "total_memories": total_memories,
+            "total_lessons": total_lessons,
             "date_range": {
                 "start": date_range["min_date"],
                 "end": date_range["max_date"],
@@ -540,6 +566,358 @@ def list_conversations(page: int = 1, per_page: int = 20):
             "total": total,
             "total_pages": (total + per_page - 1) // per_page,
         }
+    finally:
+        conn.close()
+
+
+# ─── Lessons ─────────────────────────────────────────────────────
+
+@action
+def list_lessons(status_filter: str = ""):
+    """List lessons, optionally filtered by status (draft, active, rejected, archived)."""
+    conn = get_db()
+    try:
+        if status_filter:
+            rows = conn.execute("SELECT * FROM lessons WHERE status = ? ORDER BY importance DESC, created_at DESC", (status_filter,)).fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM lessons ORDER BY importance DESC, created_at DESC").fetchall()
+        return {
+            "lessons": [{"id": r["id"], "lesson": r["lesson"], "category": r["category"], "context": r["context"], "importance": r["importance"], "status": r["status"] or "draft", "created_at": r["created_at"], "updated_at": r["updated_at"]} for r in rows],
+            "count": len(rows),
+        }
+    finally:
+        conn.close()
+
+@action
+def get_lesson(lesson_id: int):
+    """Get a single lesson by ID."""
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT * FROM lessons WHERE id = ?", (lesson_id,)).fetchone()
+        if not row:
+            return {"error": "Lesson not found"}
+        return {"id": row["id"], "lesson": row["lesson"], "category": row["category"], "context": row["context"], "importance": row["importance"], "status": row["status"] or "draft", "created_at": row["created_at"], "updated_at": row["updated_at"]}
+    finally:
+        conn.close()
+
+@action
+def update_lesson(lesson_id: int, lesson: str = "", category: str = "", context: str = "", importance: int = 0, status: str = ""):
+    """Update a lesson's fields. Only supplied fields are changed."""
+    conn = get_db()
+    try:
+        updates = []
+        params = []
+        if lesson:
+            updates.append("lesson = ?")
+            params.append(lesson)
+        if category:
+            updates.append("category = ?")
+            params.append(category)
+        if context:
+            updates.append("context = ?")
+            params.append(context)
+        if importance > 0:
+            updates.append("importance = ?")
+            params.append(importance)
+        if status:
+            updates.append("status = ?")
+            params.append(status)
+            updates.append("active = ?")
+            params.append(1 if status == "active" else 0)
+        if not updates:
+            return {"error": "No fields to update"}
+        updates.append("updated_at = ?")
+        params.append(time.time())
+        params.append(lesson_id)
+        conn.execute(f"UPDATE lessons SET {', '.join(updates)} WHERE id = ?", params)
+        conn.commit()
+        return {"success": True, "message": "Lesson updated"}
+    finally:
+        conn.close()
+
+@action
+def delete_lesson(lesson_id: int):
+    """Delete a lesson by ID."""
+    conn = get_db()
+    try:
+        conn.execute("DELETE FROM lessons WHERE id = ?", (lesson_id,))
+        conn.commit()
+        return {"success": True, "message": "Lesson deleted"}
+    finally:
+        conn.close()
+
+@action
+def import_lessons(lessons_json: str):
+    """Import lessons from a JSON string."""
+    conn = get_db()
+    try:
+        data = json.loads(lessons_json)
+        if isinstance(data, dict) and "lessons" in data:
+            data = data["lessons"]
+        imported = 0
+        now = time.time()
+        for item in data:
+            if isinstance(item, dict) and item.get("lesson"):
+                conn.execute("INSERT INTO lessons (lesson, category, context, importance, active, status, created_at, updated_at) VALUES (?, ?, ?, ?, 0, 'draft', ?, ?)", (item["lesson"], item.get("category", "technical_approach"), item.get("context", ""), item.get("importance", 3), now, now))
+                imported += 1
+        conn.commit()
+        return {"success": True, "imported": imported, "message": f"Imported {imported} lessons"}
+    except json.JSONDecodeError:
+        return {"error": "Invalid JSON"}
+    finally:
+        conn.close()
+
+@action
+def get_lessons_stats():
+    """Get lesson statistics."""
+    conn = get_db()
+    try:
+        total = conn.execute("SELECT COUNT(*) FROM lessons").fetchone()[0]
+        by_status = {}
+        for r in conn.execute("SELECT status, COUNT(*) as cnt FROM lessons GROUP BY status").fetchall():
+            by_status[r["status"] or "draft"] = r["cnt"]
+        by_category = {}
+        for r in conn.execute("SELECT category, COUNT(*) as cnt FROM lessons WHERE status = 'active' GROUP BY category").fetchall():
+            by_category[r["category"]] = r["cnt"]
+        return {"total": total, "by_status": by_status, "by_category": by_category}
+    finally:
+        conn.close()
+
+# ─── Lesson Extraction ──────────────────────────────────────────
+
+SELF_CORRECTION_SIGNALS = [
+    "didn't work", "doesn't work",
+    "let me try a different", "let me try another",
+    "unfortunately", "wasn't able", "was not able",
+    "the issue is", "the problem is",
+    "i should have",
+    "that was wrong", "that was incorrect",
+    "better to use", "better approach is",
+    "instead of using", "instead of trying",
+]
+
+EXTRACT_BATCH_PROMPT = """You are analyzing {n} self-corrections from an AI assistant. Each one shows the assistant recognizing a mistake and trying a different approach. Extract the most important GENERALIZABLE lessons.
+
+CRITICAL RULES for a good lesson:
+- Name the SPECIFIC TOOL that failed and the SPECIFIC TOOL that worked instead
+- Explain WHY it failed (the root cause)
+- Be actionable: "When doing X, don't use Y because Z. Use W instead."
+- The lesson should be specific enough that the assistant could follow it without guessing
+
+BAD examples (too vague, REJECT these):
+❌ "When external resources are blocked, use alternatives" → what alternatives?
+❌ "Manage the environment explicitly" → how?
+❌ "Follow best practices" → which ones?
+
+GOOD examples (specific, actionable):
+✅ "When editing files with special characters (apostrophes, Unicode), don't use sed because it breaks on special chars. Use Python with string.replace() or write_file instead."
+✅ "When CSP blocks external CDN stylesheets, don't link to CDN URLs. Download the file and serve it locally from the same origin."
+✅ "When running long subprocesses, don't let them block the main thread. Background with '&' and redirect stdout/stderr to a log file."
+
+{negative_examples}
+
+Here are the {n} self-corrections:
+
+{corrections}
+
+Output a JSON array of the best lessons found in THIS batch. Each lesson MUST follow the specific format above. If no good lessons are found, output [].
+
+[
+  {{
+    "lesson": "When doing X with tool Y, don't do Z because [reason]. Do W instead.",
+    "category": "technical_approach|workflow|debugging|tool_usage|environment",
+    "context": "when this applies (e.g., 'when editing files', 'when running subprocesses')",
+    "importance": 1-5
+  }}
+]
+
+BE AGGRESSIVE about rejecting vague lessons. Only include lessons that name specific tools and specific fixes."""
+
+EXTRACT_CONSOLIDATE_PROMPT = """Below are {n} lessons extracted from different batches. Consolidate them into the 10-15 most important, non-redundant lessons.
+
+CRITICAL: Each lesson MUST name the specific tool that failed, explain why, and say what to use instead. Reject vague lessons.
+
+{negative_examples}
+
+Lessons:
+{lessons}
+
+Output a JSON array of the consolidated lessons. Merge similar ones but keep the most specific version. Target 10-15.
+
+[
+  {{
+    "lesson": "When doing X with tool Y, don't do Z because [reason]. Do W instead.",
+    "category": "technical_approach|workflow|debugging|tool_usage|environment",
+    "context": "when this applies",
+    "importance": 1-5
+  }}
+]"""
+
+
+def _ensure_lessons_extracted_column(conn):
+    try:
+        conn.execute("ALTER TABLE conversations ADD COLUMN lessons_extracted_at REAL")
+        conn.commit()
+    except:
+        pass
+
+
+def _scan_self_corrections(conv_ids):
+    results = []
+    for conv_id in conv_ids:
+        events_path = os.path.join(CONV_DIR, conv_id, "events.jsonl")
+        if not os.path.exists(events_path):
+            continue
+        with open(events_path) as f:
+            events = [json.loads(line) for line in f]
+        for i, e in enumerate(events):
+            if e.get("type") != "iteration":
+                continue
+            thinking = (e.get("thinking") or "")
+            thinking_lower = thinking.lower()
+            matched = [s for s in SELF_CORRECTION_SIGNALS if s in thinking_lower]
+            if not matched:
+                continue
+            prev_result = ""
+            for j in range(max(0, i - 3), i):
+                if events[j].get("type") == "tool_result":
+                    prev_result = (events[j].get("content") or "")[:200]
+                    break
+            next_action = ""
+            for j in range(i + 1, min(len(events), i + 3)):
+                if events[j].get("type") == "iteration":
+                    tcs = events[j].get("tool_calls") or []
+                    if tcs:
+                        tc = tcs[0]
+                        args = tc.get("arguments", {})
+                        compact = {}
+                        for k in ["cmd", "path", "url", "name", "pattern"]:
+                            if k in args:
+                                compact[k] = str(args[k])[:80]
+                        next_action = f"{tc.get('name')}({json.dumps(compact)})"
+                    break
+            results.append({"thinking": thinking[:250], "prev_result": prev_result, "next_action": next_action})
+    return results
+
+
+def _format_batch(corrections, start, count):
+    lines = []
+    for i, c in enumerate(corrections[start:start + count]):
+        idx = start + i + 1
+        lines.append(f"--- {idx} ---")
+        lines.append(f"Thinking: {c['thinking']}")
+        if c['prev_result']:
+            lines.append(f"Failed: {c['prev_result'][:150]}")
+        if c['next_action']:
+            lines.append(f"Fixed: {c['next_action'][:120]}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def _call_llm(prompt, timeout=120):
+    try:
+        resp = requests.post(OLLAMA_CHAT_URL, json={
+            "model": "deepseek-v4-flash:cloud",
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False,
+            "options": {"temperature": 0.1, "num_ctx": 16384},
+        }, timeout=timeout)
+        if resp.status_code != 200:
+            return None
+        content = resp.json().get("message", {}).get("content", "")
+        m = re.search(r'\[.*\]', content, re.DOTALL)
+        if m:
+            return json.loads(m.group())
+    except:
+        pass
+    return None
+
+
+def _tokenize(text):
+    return set(re.findall(r'[a-z0-9]+', text.lower()))
+
+
+def _is_duplicate_lesson(new_text, existing_texts, threshold=0.45):
+    new_tokens = _tokenize(new_text)
+    if not new_tokens:
+        return False
+    for existing in existing_texts:
+        existing_tokens = _tokenize(existing)
+        if not existing_tokens:
+            continue
+        intersection = new_tokens & existing_tokens
+        union = new_tokens | existing_tokens
+        if len(intersection) / len(union) >= threshold:
+            return True
+    return False
+
+
+@action
+def extract_lessons(max_seconds: int = 100):
+    """Extract lessons from new/modified conversations using self-correction analysis."""
+    conn = get_db()
+    _ensure_lessons_extracted_column(conn)
+    try:
+        now = time.time()
+        to_process = []
+        for d in sorted(os.listdir(CONV_DIR)):
+            if d.startswith("_") or d == "routines":
+                continue
+            events_path = os.path.join(CONV_DIR, d, "events.jsonl")
+            if not os.path.exists(events_path):
+                continue
+            row = conn.execute("SELECT lessons_extracted_at FROM conversations WHERE id = ?", (d,)).fetchone()
+            file_mtime = os.path.getmtime(events_path)
+            if not row or row["lessons_extracted_at"] is None or file_mtime > row["lessons_extracted_at"]:
+                to_process.append(d)
+        if not to_process:
+            return {"extracted": 0, "message": "No new conversations to process"}
+        start_time = time.time()
+        corrections = _scan_self_corrections(to_process)
+        if not corrections:
+            for conv_id in to_process:
+                conn.execute("UPDATE conversations SET lessons_extracted_at = ? WHERE id = ?", (now, conv_id))
+            conn.commit()
+            return {"extracted": 0, "message": f"Scanned {len(to_process)} conversations, no self-corrections found"}
+        rejected = conn.execute("SELECT lesson FROM lessons WHERE status IN ('rejected', 'archived') ORDER BY updated_at DESC LIMIT 20").fetchall()
+        negative_examples = ""
+        if rejected:
+            neg_texts = "\n".join(f"- {r['lesson'][:200]}" for r in rejected)
+            negative_examples = f"\nThese lessons were previously generated but REJECTED by the user. Do NOT generate similar lessons:\n{neg_texts}\n"
+        batch_size = 100
+        all_lessons = []
+        for batch_start in range(0, len(corrections), batch_size):
+            if time.time() - start_time > max_seconds:
+                break
+            batch_text = _format_batch(corrections, batch_start, batch_size)
+            n = min(batch_size, len(corrections) - batch_start)
+            prompt = EXTRACT_BATCH_PROMPT.replace("{n}", str(n)).replace("{corrections}", batch_text).replace("{negative_examples}", negative_examples)
+            result = _call_llm(prompt, timeout=min(60, max_seconds))
+            if result:
+                all_lessons.extend(result)
+            time.sleep(0.5)
+        if len(all_lessons) > 15 and time.time() - start_time < max_seconds:
+            lessons_text = "\n".join(f"{i+1}. [{l.get('category', '?')}] {l.get('lesson', '')}" for i, l in enumerate(all_lessons))
+            prompt = EXTRACT_CONSOLIDATE_PROMPT.replace("{n}", str(len(all_lessons))).replace("{lessons}", lessons_text).replace("{negative_examples}", negative_examples)
+            result = _call_llm(prompt, timeout=min(60, max_seconds))
+            if result:
+                all_lessons = result
+        active_lessons = [r["lesson"] for r in conn.execute("SELECT lesson FROM lessons WHERE status = 'active'").fetchall()]
+        imported = 0
+        for item in all_lessons:
+            if isinstance(item, dict) and item.get("lesson"):
+                if _is_duplicate_lesson(item["lesson"], active_lessons):
+                    continue
+                conn.execute("INSERT INTO lessons (lesson, category, context, importance, active, status, created_at, updated_at) VALUES (?, ?, ?, ?, 0, 'draft', ?, ?)", (item["lesson"], item.get("category", "technical_approach"), item.get("context", ""), item.get("importance", 3), now, now))
+                imported += 1
+        for conv_id in to_process:
+            conn.execute("UPDATE conversations SET lessons_extracted_at = ? WHERE id = ?", (now, conv_id))
+        conn.commit()
+        elapsed = time.time() - start_time
+        return {"extracted": imported, "total_found": len(all_lessons), "conversations_scanned": len(to_process), "self_corrections_found": len(corrections), "elapsed": round(elapsed, 1), "message": f"Extracted {imported} new lessons from {len(to_process)} conversations in {elapsed:.1f}s. Review them in the Lessons tab."}
+    except Exception as e:
+        conn.rollback()
+        return {"error": str(e)}
     finally:
         conn.close()
 
