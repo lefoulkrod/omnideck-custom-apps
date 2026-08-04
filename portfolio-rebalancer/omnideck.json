@@ -1,0 +1,5 @@
+{
+  "title": "Portfolio Rebalancer",
+  "description": "Live rebalancing engine for your Empower + E*Trade portfolio. Ingests your allocation CSV, pulls live prices, and generates dollar-precise buy/sell trade tickets to hit target allocations.",
+  "icon": "bi-graph-up-arrow"
+}

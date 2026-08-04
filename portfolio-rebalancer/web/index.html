@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portfolio Rebalancer</title>
+<script src="/api/custom-apps/sdk.js"></script>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0b0f1a;
+    --panel: #131a2b;
+    --panel-2: #1a2338;
+    --border: #26304a;
+    --text: #e8ecf5;
+    --muted: #8b95ad;
+    --accent: #4f8cff;
+    --green: #2ecc71;
+    --red: #ff5c5c;
+    --gold: #f5b942;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: radial-gradient(1200px 600px at 80% -10%, #16224a 0%, var(--bg) 55%);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 22px 60px; }
+  header { display: flex; align-items: center; gap: 14px; margin-bottom: 26px; flex-wrap: wrap; }
+  .logo {
+    width: 46px; height: 46px; border-radius: 13px;
+    background: linear-gradient(135deg, var(--accent), #7a5cff);
+    display: grid; place-items: center; font-size: 22px; color: #fff;
+    box-shadow: 0 6px 20px rgba(79,140,255,.35);
+  }
+  h1 { font-size: 24px; margin: 0; font-weight: 700; letter-spacing: -.3px; }
+  .sub { color: var(--muted); font-size: 13.5px; margin-top: 2px; }
+  .live-badge {
+    margin-left: auto; display: inline-flex; align-items: center; gap: 7px;
+    background: rgba(46,204,113,.12); color: var(--green);
+    border: 1px solid rgba(46,204,113,.3); padding: 6px 13px; border-radius: 999px;
+    font-size: 12.5px; font-weight: 600;
+  }
+  .live-badge .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 1.6s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px,1fr)); gap: 16px; margin-bottom: 22px; }
+  .card {
+    background: linear-gradient(180deg, var(--panel), var(--panel-2));
+    border: 1px solid var(--border); border-radius: 16px; padding: 18px 20px;
+  }
+  .card .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .8px; }
+  .card .value { font-size: 26px; font-weight: 700; margin-top: 6px; }
+  .card .hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .accent-num { color: var(--accent); }
+  .green { color: var(--green); } .red { color: var(--red); } .gold { color: var(--gold); }
+
+  .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 18px; flex-wrap: wrap; }
+  .seg { display: inline-flex; background: var(--panel); border: 1px solid var(--border); border-radius: 11px; padding: 4px; gap: 4px; }
+  .seg button {
+    background: transparent; border: none; color: var(--muted); padding: 8px 16px;
+    border-radius: 8px; font-size: 13.5px; font-weight: 600; cursor: pointer; transition: .15s;
+  }
+  .seg button.active { background: var(--accent); color: #fff; }
+  .seg button:hover:not(.active) { color: var(--text); }
+  .btn-primary-custom {
+    background: linear-gradient(135deg, var(--accent), #7a5cff); color: #fff; border: none;
+    padding: 9px 18px; border-radius: 11px; font-weight: 600; font-size: 13.5px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 8px; transition: .15s;
+  }
+  .btn-primary-custom:hover { filter: brightness(1.1); }
+  .btn-ghost { background: var(--panel); color: var(--text); border: 1px solid var(--border); padding: 9px 16px; border-radius: 11px; font-weight: 600; font-size: 13.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
+  .btn-ghost:hover { border-color: var(--accent); }
+  .spacer { flex: 1; }
+
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 20px; margin-bottom: 18px; }
+  .panel h2 { font-size: 15px; margin: 0 0 14px; color: var(--text); display: flex; align-items: center; gap: 8px; }
+  .panel h2 i { color: var(--accent); }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 860px){ .grid-2{ grid-template-columns: 1fr; } }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th { text-align: left; color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .6px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  td { padding: 10px; border-bottom: 1px solid rgba(38,48,74,.5); }
+  tr:last-child td { border-bottom: none; }
+  .ticker-cell { font-weight: 700; }
+  .asset { color: var(--muted); font-size: 12px; }
+  .badge { padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 700; }
+  .badge.buy { background: rgba(46,204,113,.15); color: var(--green); }
+  .badge.sell { background: rgba(255,92,92,.15); color: var(--red); }
+  .badge.hold { background: rgba(139,149,173,.15); color: var(--muted); }
+  .num { font-variant-numeric: tabular-nums; }
+  .pos { color: var(--green); } .neg { color: var(--red); }
+
+  .bar { height: 6px; border-radius: 4px; background: var(--panel-2); overflow: hidden; min-width: 90px; }
+  .bar > div { height: 100%; border-radius: 4px; }
+  .bar.over { background: rgba(255,92,92,.2); } .bar.over > div { background: var(--red); }
+  .bar.under { background: rgba(46,204,113,.2); } .bar.under > div { background: var(--green); }
+
+  .donut-wrap { display: flex; align-items: center; gap: 26px; flex-wrap: wrap; }
+  .donut { position: relative; width: 200px; height: 200px; flex-shrink: 0; }
+  .donut-center { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; }
+  .donut-center .v { font-size: 22px; font-weight: 700; }
+  .donut-center .l { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .6px; }
+  .legend { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 220px; }
+  .legend-item { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+  .legend-item .swatch { width: 11px; height: 11px; border-radius: 3px; flex-shrink: 0; }
+  .legend-item .name { flex: 1; }
+  .legend-item .pct { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px);
+    background: var(--panel-2); border: 1px solid var(--accent); color: var(--text);
+    padding: 12px 22px; border-radius: 12px; font-size: 14px; font-weight: 600;
+    box-shadow: 0 10px 30px rgba(0,0,0,.4); opacity: 0; transition: .3s; z-index: 50;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+  .loading { display: flex; align-items: center; gap: 12px; color: var(--muted); padding: 30px; justify-content: center; }
+  .spinner { width: 22px; height: 22px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .empty { color: var(--muted); text-align: center; padding: 30px; }
+  .chip { display:inline-block; background: var(--panel-2); border:1px solid var(--border); border-radius:8px; padding:2px 8px; font-size:11px; color:var(--muted); margin-left:6px; }
+  .price-src { font-size: 10.5px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo"><i class="bi bi-graph-up-arrow"></i></div>
+    <div>
+      <h1>Portfolio Rebalancer</h1>
+      <div class="sub">Empower + E*Trade · live prices · dollar-precise trade tickets</div>
+    </div>
+    <span class="live-badge"><span class="dot"></span> LIVE MARKET DATA</span>
+  </header>
+
+  <div class="cards" id="cards">
+    <div class="card"><div class="label">Total Portfolio</div><div class="value accent-num" id="totalValue">—</div><div class="hint">both accounts, live</div></div>
+    <div class="card"><div class="label">Holdings</div><div class="value" id="holdingsCount">—</div><div class="hint">ETFs tracked</div></div>
+    <div class="card"><div class="label">Trades to Execute</div><div class="value gold" id="tradesCount">—</div><div class="hint">to hit target allocation</div></div>
+    <div class="card"><div class="label">Net Cash Needed</div><div class="value" id="netCash">—</div><div class="hint">buy − sell</div></div>
+  </div>
+
+  <div class="toolbar">
+    <div class="seg" id="accountSeg">
+      <button data-acct="combined" class="active">Combined</button>
+      <button data-acct="empower">Empower</button>
+      <button data-acct="etrade">E*Trade</button>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn-ghost" id="refreshBtn"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+    <button class="btn-primary-custom" id="copyBtn"><i class="bi bi-clipboard"></i> Copy Trade Tickets</button>
+  </div>
+
+  <div class="grid-2">
+    <div class="panel">
+      <h2><i class="bi bi-pie-chart"></i> Current Allocation</h2>
+      <div id="donutArea"><div class="loading"><div class="spinner"></div> Loading…</div></div>
+    </div>
+    <div class="panel">
+      <h2><i class="bi bi-lightning-charge"></i> Rebalance Plan</h2>
+      <div id="summaryArea"><div class="loading"><div class="spinner"></div> Computing…</div></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2><i class="bi bi-list-check"></i> Trade Tickets <span class="chip" id="acctChip">combined</span></h2>
+    <div id="tableArea"><div class="loading"><div class="spinner"></div> Loading…</div></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const SDK = window.omnideck;
+let state = { account: 'combined', data: null };
+
+function fmt(n, dec=2) {
+  if (n === null || n === undefined || isNaN(n)) return '—';
+  return '$' + n.toLocaleString('en-US', {minimumFractionDigits: dec, maximumFractionDigits: dec});
+}
+function fmtPct(n) { return (n === null || n === undefined) ? '—' : n.toFixed(2) + '%'; }
+
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2400);
+}
+
+async function load() {
+  document.getElementById('tableArea').innerHTML = '<div class="loading"><div class="spinner"></div> Fetching live prices…</div>';
+  document.getElementById('donutArea').innerHTML = '<div class="loading"><div class="spinner"></div> Loading…</div>';
+  document.getElementById('summaryArea').innerHTML = '<div class="loading"><div class="spinner"></div> Computing…</div>';
+  try {
+    const res = await SDK.invoke('rebalance', { account: state.account, use_live: true });
+    if (res.error) throw new Error(res.error);
+    state.data = res;
+    render(res);
+  } catch (e) {
+    document.getElementById('tableArea').innerHTML = '<div class="empty">⚠️ ' + e.message + '</div>';
+    document.getElementById('donutArea').innerHTML = '<div class="empty">Could not load data.</div>';
+    document.getElementById('summaryArea').innerHTML = '<div class="empty">Could not load data.</div>';
+  }
+}
+
+function render(d) {
+  // Cards
+  document.getElementById('totalValue').textContent = fmt(d.total_value);
+  document.getElementById('holdingsCount').textContent = d.holdings.length;
+  const trades = d.holdings.filter(h => h.ticket);
+  document.getElementById('tradesCount').textContent = trades.length;
+  const net = d.summary.net_cash_needed;
+  const netEl = document.getElementById('netCash');
+  netEl.textContent = fmt(Math.abs(net));
+  netEl.className = 'value ' + (net >= 0 ? 'green' : 'red');
+  document.getElementById('acctChip').textContent = state.account;
+
+  renderDonut(d);
+  renderSummary(d);
+  renderTable(d);
+}
+
+function renderDonut(d) {
+  const area = document.getElementById('donutArea');
+  const top = [...d.holdings].sort((a,b) => b.current_value - a.current_value).slice(0, 8);
+  const others = d.holdings.filter(h => !top.includes(h)).reduce((s,h) => s + h.current_value, 0);
+  const total = d.total_value || 1;
+  const palette = ['#4f8cff','#7a5cff','#2ecc71','#f5b942','#ff5c5c','#00c2d1','#ff8a5c','#b06cff','#8b95ad'];
+  let acc = 0;
+  const segs = top.map((h,i) => {
+    const pct = h.current_value / total;
+    const seg = { name: h.ticker, pct, color: palette[i % palette.length], start: acc, end: acc + pct };
+    acc += pct;
+    return seg;
+  });
+  if (others > 0) segs.push({ name: 'Other', pct: others/total, color: '#8b95ad', start: acc, end: 1 });
+
+  const R = 80, C = 2 * Math.PI * R;
+  let svg = `<svg width="200" height="200" viewBox="0 0 200 200">
+    <circle cx="100" cy="100" r="${R}" fill="none" stroke="#1a2338" stroke-width="26"/>`;
+  segs.forEach(s => {
+    const frac = s.end - s.start;
+    const dash = frac * C;
+    const off = -s.start * C;
+    svg += `<circle cx="100" cy="100" r="${R}" fill="none" stroke="${s.color}" stroke-width="26"
+      stroke-dasharray="${dash} ${C-dash}" stroke-dashoffset="${off}" transform="rotate(-90 100 100)"
+      stroke-linecap="butt"/>`;
+  });
+  svg += `</svg>`;
+
+  const legend = segs.map(s => `
+    <div class="legend-item">
+      <span class="swatch" style="background:${s.color}"></span>
+      <span class="name">${s.name}</span>
+      <span class="pct">${(s.pct*100).toFixed(2)}%</span>
+    </div>`).join('');
+
+  area.innerHTML = `<div class="donut-wrap">
+    <div class="donut">${svg}
+      <div class="donut-center"><div><div class="v">${d.holdings.length}</div><div class="l">holdings</div></div></div>
+    </div>
+    <div class="legend">${legend}</div>
+  </div>`;
+}
+
+function renderSummary(d) {
+  const s = d.summary;
+  const buys = d.holdings.filter(h => h.ticket && h.ticket.action === 'BUY');
+  const sells = d.holdings.filter(h => h.ticket && h.ticket.action === 'SELL');
+  const buyAmt = buys.reduce((a,h) => a + h.ticket.approx_amount, 0);
+  const sellAmt = sells.reduce((a,h) => a + h.ticket.approx_amount, 0);
+  document.getElementById('summaryArea').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">
+      <div style="background:rgba(46,204,113,.08);border:1px solid rgba(46,204,113,.25);border-radius:12px;padding:14px">
+        <div style="color:var(--green);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Buy</div>
+        <div style="font-size:22px;font-weight:700;margin-top:4px">${fmt(buyAmt)}</div>
+        <div style="color:var(--muted);font-size:12px">${buys.length} tickets</div>
+      </div>
+      <div style="background:rgba(255,92,92,.08);border:1px solid rgba(255,92,92,.25);border-radius:12px;padding:14px">
+        <div style="color:var(--red);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Sell</div>
+        <div style="font-size:22px;font-weight:700;margin-top:4px">${fmt(sellAmt)}</div>
+        <div style="color:var(--muted);font-size:12px">${sells.length} tickets</div>
+      </div>
+    </div>
+    <div style="color:var(--muted);font-size:13px;line-height:1.7">
+      ${s.trades} trades to bring the portfolio back to target allocation.
+      Net cash required: <b class="${s.net_cash_needed >= 0 ? 'green' : 'red'}">${fmt(Math.abs(s.net_cash_needed))}</b>.
+      The plan is self-funding — sells roughly cover buys.
+    </div>`;
+}
+
+function renderTable(d) {
+  const rows = d.holdings.map(h => {
+    const t = h.ticket;
+    const badge = t ? `<span class="badge ${t.action.toLowerCase()}">${t.action}</span>` : '<span class="badge hold">HOLD</span>';
+    const deltaPct = h.current_pct - h.target_pct;
+    const barCls = deltaPct > 0.02 ? 'over' : (deltaPct < -0.02 ? 'under' : '');
+    const barPct = Math.min(100, Math.abs(deltaPct) * 40);
+    const barColor = deltaPct > 0.02 ? 'var(--red)' : (deltaPct < -0.02 ? 'var(--green)' : 'var(--muted)');
+    const trade = t ? `<td class="num">${t.shares.toFixed(2)} sh</td><td class="num">${fmt(t.approx_amount)}</td>` : '<td class="num" style="color:var(--muted)">—</td><td class="num" style="color:var(--muted)">—</td>';
+    return `<tr>
+      <td><span class="ticker-cell">${h.ticker}</span><div class="asset">${h.asset_class || '—'}</div></td>
+      <td>${badge}</td>
+      <td class="num">${fmt(h.current_value)}</td>
+      <td class="num">${fmtPct(h.current_pct)}</td>
+      <td class="num">${fmtPct(h.target_pct)}</td>
+      <td><div class="bar ${barCls}"><div style="width:${barPct}%;background:${barColor}"></div></div></td>
+      ${trade}
+    </tr>`;
+  }).join('');
+
+  document.getElementById('tableArea').innerHTML = `
+    <table>
+      <thead><tr>
+        <th>Ticker</th><th>Action</th><th>Current $</th><th>Now %</th><th>Target %</th><th>Drift</th><th>Shares</th><th>Amount</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+function copyTickets() {
+  if (!state.data) return;
+  const lines = state.data.holdings
+    .filter(h => h.ticket)
+    .map(h => `${h.ticket.action}\t${h.ticker}\t${h.ticket.shares.toFixed(2)} shares\t~${fmt(h.ticket.approx_amount)}`)
+    .join('\n');
+  const header = `Portfolio Rebalancer — ${state.account} — ${fmt(state.data.total_value)}\n`;
+  const text = header + lines;
+  navigator.clipboard.writeText(text).then(() => toast('Trade tickets copied to clipboard ✓')).catch(() => toast('Copy failed'));
+}
+
+// Events
+document.querySelectorAll('#accountSeg button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#accountSeg button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.account = btn.dataset.acct;
+    load();
+  });
+});
+document.getElementById('refreshBtn').addEventListener('click', load);
+document.getElementById('copyBtn').addEventListener('click', copyTickets);
+
+load();
+</script>
+</body>
+</html>

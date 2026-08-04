@@ -1,0 +1,1653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sticky Wiki</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+  :root {
+    --bg: #faf9f8;
+    --surface: #ffffff;
+    --border: #e1dfdd;
+    --text: #1a1a1a;
+    --text-muted: #6b6b6b;
+    --accent: #4a6cf7;
+    --accent-hover: #3b5de7;
+    --accent-light: #eef1ff;
+    --danger: #e74c3c;
+    --danger-hover: #c0392b;
+    --success: #27ae60;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+    --radius: 8px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.08);
+    --sidebar-width: 280px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* ── Sidebar ─────────────────────────────────────── */
+  .sidebar {
+    width: var(--sidebar-width);
+    min-width: var(--sidebar-width);
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+  }
+
+  .sidebar-header {
+    padding: 16px 16px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .sidebar-header h1 {
+    font-size: 18px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .sidebar-header h1 i {
+    color: var(--accent);
+    font-size: 22px;
+  }
+
+  .sidebar-header .subtitle {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+
+  .search-box {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .search-box input {
+    width: 100%;
+    padding: 8px 12px 8px 34px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 13px;
+    background: var(--bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%236b6b6b' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='M21 21l-4.35-4.35'/%3E%3C/svg%3E") 10px center no-repeat;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .search-box input:focus {
+    border-color: var(--accent);
+  }
+
+  .page-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0;
+  }
+
+  .page-list .empty {
+    padding: 24px 16px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+
+  .page-item {
+    display: flex;
+    align-items: center;
+    padding: 8px 16px;
+    cursor: pointer;
+    border-left: 3px solid transparent;
+    transition: background 0.1s;
+    gap: 10px;
+  }
+
+  .page-item:hover {
+    background: var(--accent-light);
+  }
+
+  .page-item.active {
+    background: var(--accent-light);
+    border-left-color: var(--accent);
+  }
+
+  .page-item .page-icon {
+    color: var(--accent);
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+
+  .page-item .page-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .page-item .page-title {
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .page-item .page-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .sidebar-footer {
+    padding: 10px 16px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 6px;
+  }
+
+  .sidebar-footer .stats {
+    font-size: 11px;
+    color: var(--text-muted);
+    flex: 1;
+    align-self: center;
+  }
+
+  /* ── Main Content ────────────────────────────────── */
+  .main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .main-header {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 56px;
+  }
+
+  .main-header .breadcrumb {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .main-header .breadcrumb span { cursor: pointer; }
+  .main-header .breadcrumb span:hover { color: var(--accent); }
+
+  .main-header .actions {
+    display: flex;
+    gap: 6px;
+  }
+
+  .content-area {
+    flex: 1;
+    overflow-y: auto;
+    padding: 32px 40px;
+  }
+
+  .content-area.welcome {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .welcome-card {
+    text-align: center;
+    max-width: 480px;
+  }
+
+  .welcome-card .big-icon {
+    font-size: 48px;
+    color: var(--accent);
+    margin-bottom: 16px;
+  }
+
+  .welcome-card h2 {
+    font-size: 22px;
+    margin-bottom: 8px;
+  }
+
+  .welcome-card p {
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1.6;
+    margin-bottom: 20px;
+  }
+
+  /* ── Wiki Page Rendering ─────────────────────────── */
+  .wiki-page h1 {
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 16px;
+    line-height: 1.3;
+  }
+
+  .wiki-page h2 {
+    font-size: 20px;
+    font-weight: 600;
+    margin-top: 24px;
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .wiki-page h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-top: 20px;
+    margin-bottom: 8px;
+  }
+
+  .wiki-page p {
+    font-size: 15px;
+    line-height: 1.7;
+    margin-bottom: 12px;
+  }
+
+  .wiki-page ul, .wiki-page ol {
+    margin: 8px 0 12px 24px;
+    font-size: 15px;
+    line-height: 1.7;
+  }
+
+  .wiki-page li { margin-bottom: 4px; }
+
+  .wiki-page code {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    background: #f0f0f0;
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+
+  .wiki-page pre {
+    background: #1e1e2e;
+    color: #cdd6f4;
+    padding: 16px;
+    border-radius: var(--radius);
+    overflow-x: auto;
+    margin: 12px 0;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .wiki-page pre code {
+    background: none;
+    padding: 0;
+    color: inherit;
+    font-size: inherit;
+  }
+
+  .wiki-page hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 20px 0;
+  }
+
+  .wiki-page blockquote {
+    border-left: 3px solid var(--accent);
+    padding: 8px 16px;
+    margin: 12px 0;
+    color: var(--text-muted);
+    background: var(--accent-light);
+    border-radius: 0 var(--radius) var(--radius) 0;
+  }
+
+  .wiki-page strong { font-weight: 600; }
+
+  .wiki-link {
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 500;
+    border-bottom: 1px dashed var(--accent);
+  }
+
+  .wiki-link:hover {
+    color: var(--accent-hover);
+    border-bottom-style: solid;
+  }
+
+  .wiki-link-missing {
+    color: var(--danger);
+    border-bottom-color: var(--danger);
+  }
+
+  .wiki-link-missing:hover {
+    color: var(--danger-hover);
+  }
+
+  .page-meta-bar {
+    display: flex;
+    gap: 16px;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .backlinks-section {
+    margin-top: 32px;
+    padding-top: 16px;
+    border-top: 2px solid var(--border);
+  }
+
+  .backlinks-section h3 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+
+  .backlinks-section a {
+    display: inline-block;
+    margin-right: 8px;
+    margin-bottom: 4px;
+    font-size: 13px;
+  }
+
+  /* ── Editor ──────────────────────────────────────── */
+  .editor-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+
+  .editor-toolbar {
+    display: flex;
+    gap: 6px;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-wrap: wrap;
+  }
+
+  .editor-toolbar button {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 8px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .editor-toolbar button:hover {
+    background: var(--accent-light);
+    border-color: var(--accent);
+  }
+
+  .editor-toolbar .toolbar-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    align-self: center;
+    margin-left: auto;
+  }
+
+  .editor-textarea {
+    flex: 1;
+    border: none;
+    outline: none;
+    padding: 20px 24px;
+    font-family: var(--font-mono);
+    font-size: 14px;
+    line-height: 1.7;
+    resize: none;
+    background: var(--surface);
+    color: var(--text);
+  }
+
+  .editor-textarea::placeholder {
+    color: #bbb;
+  }
+
+  .editor-preview {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 24px;
+    background: var(--surface);
+  }
+
+  /* ── Buttons ─────────────────────────────────────── */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    background: var(--surface);
+    color: var(--text);
+    transition: all 0.12s;
+    white-space: nowrap;
+  }
+
+  .btn:hover {
+    background: var(--bg);
+    border-color: #ccc;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+  }
+
+  .btn-primary:hover {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+  }
+
+  .btn-danger {
+    color: var(--danger);
+    border-color: var(--danger);
+  }
+
+  .btn-danger:hover {
+    background: var(--danger);
+    color: white;
+  }
+
+  .btn-sm {
+    padding: 4px 10px;
+    font-size: 12px;
+  }
+
+  .btn-icon {
+    padding: 6px 8px;
+    font-size: 15px;
+  }
+
+  /* ── Modal ───────────────────────────────────────── */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+
+  .modal {
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 24px;
+    width: 90%;
+    max-width: 480px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+  }
+
+  .modal h2 {
+    font-size: 18px;
+    margin-bottom: 16px;
+  }
+
+  .modal label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 4px;
+    color: var(--text-muted);
+  }
+
+  .modal input, .modal textarea {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 14px;
+    font-family: var(--font);
+    margin-bottom: 12px;
+    outline: none;
+  }
+
+  .modal input:focus, .modal textarea:focus {
+    border-color: var(--accent);
+  }
+
+  .modal textarea {
+    min-height: 100px;
+    resize: vertical;
+  }
+
+  .modal .modal-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 8px;
+  }
+
+  /* ── Toast ────────────────────────────────────────── */
+  .toast-container {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 2000;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .toast {
+    background: #333;
+    color: white;
+    padding: 10px 18px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    animation: slideIn 0.2s ease;
+  }
+
+  .toast.success { background: var(--success); }
+  .toast.error { background: var(--danger); }
+
+  @keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+
+  /* ── History panel ───────────────────────────────── */
+  .history-panel {
+    padding: 16px 24px;
+  }
+
+  .history-panel h3 {
+    font-size: 16px;
+    margin-bottom: 12px;
+  }
+
+  .history-panel .version-item {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .history-panel .version-item button {
+    background: none;
+    border: none;
+    color: var(--accent);
+    cursor: pointer;
+    font-size: 12px;
+  }
+
+  .history-panel .version-item button:hover {
+    text-decoration: underline;
+  }
+
+  /* ── Responsive ──────────────────────────────────── */
+  @media (max-width: 768px) {
+    .sidebar { display: none; }
+    .content-area { padding: 20px; }
+  }
+
+  /* ── Scrollbar ───────────────────────────────────── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #aaa; }
+
+  /* ── Graph View ──────────────────────────────────── */
+  .graph-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .graph-container svg {
+    width: 100%;
+    flex: 1;
+    background: var(--surface);
+    cursor: grab;
+  }
+
+  .graph-container svg:active {
+    cursor: grabbing;
+  }
+
+  .graph-node {
+    cursor: pointer;
+    transition: r 0.15s;
+  }
+
+  .graph-node:hover circle {
+    stroke-width: 3px;
+  }
+
+  .graph-node-label {
+    font-size: 11px;
+    font-family: var(--font);
+    pointer-events: none;
+    fill: var(--text);
+    text-anchor: middle;
+    dominant-baseline: central;
+  }
+
+  .graph-link {
+    stroke: #ccc;
+    stroke-width: 1.5;
+    stroke-opacity: 0.6;
+  }
+
+  .graph-controls {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    z-index: 10;
+  }
+
+  .graph-controls button {
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    color: var(--text);
+    box-shadow: var(--shadow);
+  }
+
+  .graph-controls button:hover {
+    background: var(--accent-light);
+    border-color: var(--accent);
+  }
+
+  .graph-tooltip {
+    position: absolute;
+    background: #333;
+    color: white;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    white-space: nowrap;
+    z-index: 20;
+  }
+
+  .graph-tooltip.visible {
+    opacity: 1;
+  }
+
+  .graph-legend {
+    position: absolute;
+    bottom: 12px;
+    left: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px 12px;
+    font-size: 11px;
+    color: var(--text-muted);
+    box-shadow: var(--shadow);
+    z-index: 10;
+  }
+
+  .graph-legend .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 2px 0;
+  }
+
+  .graph-legend .legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .graph-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+
+  /* ── Loading ──────────────────────────────────────── */
+  .loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    color: var(--text-muted);
+  }
+
+  .spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    margin-right: 8px;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<!-- ─── Sidebar ─── -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <h1><i class="bi bi-journal-text"></i> Sticky Wiki</h1>
+    <div class="subtitle">Your personal knowledge base</div>
+  </div>
+  <div class="search-box">
+    <input type="text" id="searchInput" placeholder="Search pages..." oninput="onSearch()">
+  </div>
+  <div class="page-list" id="pageList">
+    <div class="loading"><div class="spinner"></div> Loading...</div>
+  </div>
+  <div class="sidebar-footer">
+    <span class="stats" id="statsBar">0 pages</span>
+    <button class="btn btn-sm" onclick="navigateGraph()" title="Graph view">
+      <i class="bi bi-diagram-3"></i>
+    </button>
+    <button class="btn btn-sm btn-primary" onclick="showCreateModal()">
+      <i class="bi bi-plus-lg"></i>
+    </button>
+  </div>
+</aside>
+
+<!-- ─── Main ─── -->
+<main class="main" id="main">
+  <div class="main-header">
+    <div class="breadcrumb" id="breadcrumb">
+      <span onclick="navigateHome()">Wiki</span>
+      <span id="breadcrumbCurrent"></span>
+    </div>
+    <div class="actions" id="pageActions"></div>
+  </div>
+  <div class="content-area" id="contentArea">
+    <div class="welcome-card">
+      <div class="big-icon"><i class="bi bi-journal-text"></i></div>
+      <h2>Welcome to Sticky Wiki</h2>
+      <p>
+        A personal wiki of markdown pages — inspired by Andrej Karpathy's
+        LLM Wiki pattern. Browse, create, and edit interlinked wiki pages
+        stored as plain markdown files.
+      </p>
+      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="showCreateModal()">
+          <i class="bi bi-plus-lg"></i> Create your first page
+        </button>
+        <button class="btn" onclick="navigateGraph()">
+          <i class="bi bi-diagram-3"></i> Graph view
+        </button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- ─── Create Modal ─── -->
+<div class="modal-overlay" id="createModal" style="display:none" onclick="closeModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h2>Create New Page</h2>
+    <label for="newPageTitle">Page Title</label>
+    <input type="text" id="newPageTitle" placeholder="e.g. Machine Learning Basics" autofocus>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeCreateModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="createPage()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Delete Confirm Modal ─── -->
+<div class="modal-overlay" id="deleteModal" style="display:none" onclick="closeModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h2>Delete Page</h2>
+    <p id="deleteConfirmText" style="margin-bottom:16px;color:var(--text-muted)">Are you sure?</p>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeDeleteModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="confirmDelete()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Toast Container ─── -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script src="/api/custom-apps/sdk.js"></script>
+<script>
+// ── State ─────────────────────────────────────────────────────────────
+let state = {
+  pages: [],
+  currentSlug: null,
+  isEditing: false,
+  deleteTarget: null,
+  searchQuery: '',
+};
+
+// ── Navigation ────────────────────────────────────────────────────────
+function resetContentArea() {
+  const area = document.getElementById('contentArea');
+  area.style.padding = '';
+  area.style.display = '';
+  area.style.flexDirection = '';
+  area.className = 'content-area';
+  area.classList.remove('welcome');
+}
+
+function navigateHome() {
+  resetContentArea();
+  state.currentSlug = null;
+  state.isEditing = false;
+  renderBreadcrumb();
+  renderPageActions();
+  renderWelcome();
+  highlightSidebar(null);
+}
+
+function navigateToPage(slug) {
+  resetContentArea();
+  state.currentSlug = slug;
+  state.isEditing = false;
+  loadPage(slug);
+}
+
+function navigateToEdit(slug) {
+  resetContentArea();
+  state.currentSlug = slug;
+  state.isEditing = true;
+  loadEditor(slug);
+}
+
+function navigateGraph(highlightSlug) {
+  const hash = highlightSlug ? `#/graph/${highlightSlug}` : '#/graph';
+  location.hash = hash;
+}
+
+// ── Graph View ────────────────────────────────────────────────────────
+let graphSimulation = null;
+
+async function loadGraph(highlightSlug) {
+  const area = document.getElementById('contentArea');
+  const main = document.getElementById('main');
+  const header = document.querySelector('.main-header');
+
+  // Hide the content area padding, show graph container
+  area.innerHTML = '';
+  area.className = 'content-area';
+  area.style.padding = '0';
+  area.style.display = 'flex';
+  area.style.flexDirection = 'column';
+
+  renderBreadcrumb(null, false, false, true);
+  renderPageActions();
+
+  area.innerHTML = '<div class="loading"><div class="spinner"></div> Loading graph...</div>';
+
+  const data = await api('get_graph_data');
+  if (!data || !data.nodes || data.nodes.length === 0) {
+    area.innerHTML = '<div class="graph-empty">No pages yet. Create some to see the graph!</div>';
+    return;
+  }
+
+  // Build the graph
+  area.innerHTML = `
+    <div class="graph-container" id="graphContainer">
+      <div class="graph-tooltip" id="graphTooltip"></div>
+      <div class="graph-controls">
+        <button onclick="zoomGraphIn()" title="Zoom in"><i class="bi bi-zoom-in"></i></button>
+        <button onclick="zoomGraphOut()" title="Zoom out"><i class="bi bi-zoom-out"></i></button>
+        <button onclick="resetGraphZoom()" title="Reset view"><i class="bi bi-arrows-fullscreen"></i></button>
+      </div>
+      <div class="graph-legend">
+        <div class="legend-item"><span class="legend-dot" style="background:var(--accent)"></span> Page</div>
+        <div class="legend-item"><span style="color:#ccc">━━</span> Wiki link</div>
+        <div class="legend-item" style="margin-top:4px;color:var(--text)">${data.nodes.length} pages · ${data.edges.length} links</div>
+      </div>
+    </div>`;
+
+  const container = document.getElementById('graphContainer');
+  const tooltip = document.getElementById('graphTooltip');
+
+  // Set up dimensions
+  const rect = container.getBoundingClientRect();
+  const width = rect.width || 800;
+  const height = rect.height || 600;
+
+  // Color scale based on connection count
+  const linkCounts = {};
+  data.nodes.forEach(n => { linkCounts[n.id] = 0; });
+  data.edges.forEach(e => {
+    linkCounts[e.source] = (linkCounts[e.source] || 0) + 1;
+    linkCounts[e.target] = (linkCounts[e.target] || 0) + 1;
+  });
+  const maxLinks = Math.max(1, ...Object.values(linkCounts));
+  const colorScale = d3.scaleSequential(d3.interpolateBlues)
+    .domain([0, maxLinks]);
+
+  // Size scale based on word count
+  const maxWords = Math.max(1, ...data.nodes.map(n => n.word_count));
+  const sizeScale = d3.scaleSqrt()
+    .domain([0, maxWords])
+    .range([8, 28]);
+
+  // Create SVG
+  const svg = d3.select('#graphContainer')
+    .append('svg')
+    .attr('width', width)
+    .attr('height', height)
+    .style('background', 'var(--surface)');
+
+  // Add zoom behavior
+  const g = svg.append('g');
+  const zoom = d3.zoom()
+    .scaleExtent([0.1, 4])
+    .on('zoom', (event) => {
+      g.attr('transform', event.transform);
+    });
+  svg.call(zoom);
+
+  // Create the force simulation
+  const simulation = d3.forceSimulation(data.nodes)
+    .force('link', d3.forceLink(data.edges)
+      .id(d => d.id)
+      .distance(120)
+      .strength(0.3))
+    .force('charge', d3.forceManyBody()
+      .strength(-250))
+    .force('center', d3.forceCenter(width / 2, height / 2))
+    .force('collision', d3.forceCollide()
+      .radius(d => sizeScale(d.word_count) + 10));
+
+  graphSimulation = simulation;
+
+  // Draw links
+  const link = g.append('g')
+    .selectAll('line')
+    .data(data.edges)
+    .join('line')
+    .attr('class', 'graph-link')
+    .attr('stroke-opacity', 0.5);
+
+  // Draw nodes
+  const node = g.append('g')
+    .selectAll('g')
+    .data(data.nodes)
+    .join('g')
+    .attr('class', 'graph-node')
+    .call(d3.drag()
+      .on('start', (event, d) => {
+        if (!event.active) simulation.alphaTarget(0.3).restart();
+        d.fx = d.x;
+        d.fy = d.y;
+      })
+      .on('drag', (event, d) => {
+        d.fx = event.x;
+        d.fy = event.y;
+      })
+      .on('end', (event, d) => {
+        if (!event.active) simulation.alphaTarget(0);
+        d.fx = null;
+        d.fy = null;
+      })
+    );
+
+  // Node circles
+  node.append('circle')
+    .attr('r', d => sizeScale(d.word_count))
+    .attr('fill', d => {
+      if (highlightSlug && d.id === highlightSlug) return '#e74c3c';
+      return colorScale(linkCounts[d.id] || 0);
+    })
+    .attr('stroke', d => {
+      if (highlightSlug && d.id === highlightSlug) return '#c0392b';
+      return '#fff';
+    })
+    .attr('stroke-width', d => highlightSlug && d.id === highlightSlug ? 3 : 2)
+    .style('cursor', 'pointer')
+    .on('mouseenter', (event, d) => {
+      tooltip.textContent = d.title;
+      tooltip.classList.add('visible');
+      const ct = container.getBoundingClientRect();
+      tooltip.style.left = (event.clientX - ct.left + 10) + 'px';
+      tooltip.style.top = (event.clientY - ct.top - 10) + 'px';
+    })
+    .on('mousemove', (event) => {
+      const ct = container.getBoundingClientRect();
+      tooltip.style.left = (event.clientX - ct.left + 10) + 'px';
+      tooltip.style.top = (event.clientY - ct.top - 10) + 'px';
+    })
+    .on('mouseleave', () => {
+      tooltip.classList.remove('visible');
+    })
+    .on('click', (event, d) => {
+      event.stopPropagation();
+      navigateToPage(d.id);
+    });
+
+  // Node labels
+  node.append('text')
+    .attr('class', 'graph-node-label')
+    .text(d => d.title.length > 20 ? d.title.slice(0, 18) + '…' : d.title)
+    .attr('dy', d => sizeScale(d.word_count) + 14)
+    .style('font-size', d => d.word_count > 50 ? '12px' : '10px')
+    .style('font-weight', d => highlightSlug && d.id === highlightSlug ? '700' : '400');
+
+  // Simulation tick
+  simulation.on('tick', () => {
+    link
+      .attr('x1', d => d.source.x)
+      .attr('y1', d => d.source.y)
+      .attr('x2', d => d.target.x)
+      .attr('y2', d => d.target.y);
+
+    node
+      .attr('transform', d => `translate(${d.x},${d.y})`);
+  });
+
+  // If there's a highlight slug, center on it after a short delay
+  if (highlightSlug) {
+    setTimeout(() => {
+      const target = data.nodes.find(n => n.id === highlightSlug);
+      if (target && target.x && target.y) {
+        const scale = 1.5;
+        const tx = width / 2 - target.x * scale;
+        const ty = height / 2 - target.y * scale;
+        svg.transition().duration(500).call(
+          zoom.transform,
+          d3.zoomIdentity.translate(tx, ty).scale(scale)
+        );
+      }
+    }, 500);
+  }
+
+  // Click on background to deselect
+  svg.on('click', () => {
+    navigateGraph();
+  });
+}
+
+// Zoom controls
+function zoomGraphIn() {
+  const svg = d3.select('#graphContainer svg');
+  if (svg.empty()) return;
+  svg.transition().duration(200).call(d3.zoom().scaleBy, 1.3);
+}
+
+function zoomGraphOut() {
+  const svg = d3.select('#graphContainer svg');
+  if (svg.empty()) return;
+  svg.transition().duration(200).call(d3.zoom().scaleBy, 0.7);
+}
+
+function resetGraphZoom() {
+  const svg = d3.select('#graphContainer svg');
+  if (svg.empty()) return;
+  svg.transition().duration(300).call(
+    d3.zoom().transform,
+    d3.zoomIdentity
+  );
+}
+
+// ── Routing via hash ───────────────────────────────────────────────────
+function handleHash() {
+  const hash = location.hash.slice(1) || '/';
+  if (hash === '/' || hash === '') {
+    navigateHome();
+    return;
+  }
+  const parts = hash.split('/').filter(Boolean);
+  if (parts[0] === 'page' && parts[1]) {
+    state.currentSlug = parts[1];
+    state.isEditing = false;
+    loadPage(parts[1]);
+  } else if (parts[0] === 'edit' && parts[1]) {
+    state.currentSlug = parts[1];
+    state.isEditing = true;
+    loadEditor(parts[1]);
+  } else if (parts[0] === 'history' && parts[1]) {
+    state.currentSlug = parts[1];
+    state.isEditing = false;
+    loadHistory(parts[1]);
+  } else if (parts[0] === 'graph') {
+    state.currentSlug = parts[1] || null;
+    state.isEditing = false;
+    loadGraph(parts[1] || null);
+  } else {
+    navigateHome();
+  }
+}
+
+window.addEventListener('hashchange', handleHash);
+
+// ── API calls ─────────────────────────────────────────────────────────
+async function api(action, args = {}) {
+  try {
+    return await window.omnideck.invoke(action, args);
+  } catch (e) {
+    console.error('API error:', e);
+    showToast(e.message || 'Something went wrong', 'error');
+    return null;
+  }
+}
+
+// ── Sidebar ──────────────────────────────────────────────────────────
+async function loadSidebar() {
+  const pages = await api('list_all_pages');
+  if (!pages) return;
+  state.pages = pages;
+  renderSidebar();
+  updateStats();
+}
+
+function renderSidebar() {
+  const el = document.getElementById('pageList');
+  const q = state.searchQuery.toLowerCase();
+  let filtered = state.pages;
+  if (q) {
+    filtered = state.pages.filter(p =>
+      p.title.toLowerCase().includes(q) ||
+      (p.summary && p.summary.toLowerCase().includes(q))
+    );
+  }
+  if (filtered.length === 0) {
+    el.innerHTML = `<div class="empty">${q ? 'No pages match your search.' : 'No pages yet. Create one!'}</div>`;
+    return;
+  }
+  el.innerHTML = filtered.map(p => `
+    <div class="page-item ${p.slug === state.currentSlug ? 'active' : ''}"
+         onclick="navigateToPage('${p.slug}')">
+      <i class="bi bi-file-text page-icon"></i>
+      <div class="page-info">
+        <div class="page-title">${escapeHtml(p.title)}</div>
+        <div class="page-meta">${p.word_count} words</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function highlightSidebar(slug) {
+  state.currentSlug = slug;
+  document.querySelectorAll('.page-item').forEach(el => el.classList.remove('active'));
+  if (slug) {
+    const items = document.querySelectorAll('.page-item');
+    for (const item of items) {
+      if (item.getAttribute('onclick')?.includes(slug)) {
+        item.classList.add('active');
+      }
+    }
+  }
+}
+
+function updateStats() {
+  document.getElementById('statsBar').textContent = `${state.pages.length} page${state.pages.length !== 1 ? 's' : ''}`;
+}
+
+function onSearch() {
+  state.searchQuery = document.getElementById('searchInput').value;
+  renderSidebar();
+}
+
+// ── Page View ───────────────────────────────────────────────────────
+async function loadPage(slug) {
+  resetContentArea();
+  const area = document.getElementById('contentArea');
+  area.innerHTML = '<div class="loading"><div class="spinner"></div> Loading...</div>';
+  renderBreadcrumb(slug);
+  renderPageActions(slug);
+
+  const page = await api('get_page', { slug });
+  if (!page) {
+    area.innerHTML = `
+      <div class="welcome-card">
+        <div class="big-icon"><i class="bi bi-file-earmark-x"></i></div>
+        <h2>Page not found</h2>
+        <p>The page "${slug}" doesn't exist yet.</p>
+        <button class="btn btn-primary" onclick="showCreateModal('${slug}')">
+          <i class="bi bi-plus-lg"></i> Create it
+        </button>
+      </div>`;
+    return;
+  }
+
+  const backlinks = await api('get_backlinks', { slug }) || [];
+
+  area.innerHTML = `
+    <div class="wiki-page">
+      ${page.html}
+      <div class="page-meta-bar">
+        <span><i class="bi bi-clock"></i> ${formatDate(page.updated)}</span>
+        <span><i class="bi bi-fonts"></i> ${page.word_count} words</span>
+      </div>
+      ${backlinks.length > 0 ? `
+        <div class="backlinks-section">
+          <h3><i class="bi bi-link-45deg"></i> Linked from</h3>
+          ${backlinks.map(b => `<a class="wiki-link" href="#/page/${b.slug}">${escapeHtml(b.title)}</a>`).join('')}
+        </div>
+      ` : ''}
+    </div>`;
+  highlightSidebar(slug);
+}
+
+// ── Editor ───────────────────────────────────────────────────────────
+async function loadEditor(slug) {
+  resetContentArea();
+  const area = document.getElementById('contentArea');
+  area.innerHTML = '<div class="loading"><div class="spinner"></div> Loading...</div>';
+  renderBreadcrumb(slug, true);
+  renderPageActions(slug, true);
+
+  const page = await api('get_page', { slug });
+  const content = page ? page.content : `# ${titleFromSlug(slug)}\n\n`;
+
+  area.innerHTML = `
+    <div class="editor-container">
+      <div class="editor-toolbar">
+        <button onclick="insertMarkdown('**', '**')"><i class="bi bi-type-bold"></i></button>
+        <button onclick="insertMarkdown('*', '*')"><i class="bi bi-type-italic"></i></button>
+        <button onclick="insertMarkdown('## ', '')"><i class="bi bi-hash"></i> H2</button>
+        <button onclick="insertMarkdown('### ', '')"><i class="bi bi-hash"></i> H3</button>
+        <button onclick="insertMarkdown('- ', '')"><i class="bi bi-list-ul"></i></button>
+        <button onclick="insertMarkdown('1. ', '')"><i class="bi bi-list-ol"></i></button>
+        <button onclick="insertMarkdown('\`', '\`')"><i class="bi bi-code"></i></button>
+        <button onclick="insertMarkdown('> ', '')"><i class="bi bi-blockquote-left"></i></button>
+        <button onclick="insertMarkdown('[[', ']]')"><i class="bi bi-link"></i> Link</button>
+        <button onclick="insertMarkdown('\`\`\`\n', '\n\`\`\`')"><i class="bi bi-code-square"></i> Code</button>
+        <span class="toolbar-hint">Markdown · <a href="#" onclick="togglePreview();return false" id="previewToggle">Preview</a></span>
+      </div>
+      <textarea class="editor-textarea" id="editorTextarea" placeholder="Write your wiki content here...">${escapeHtml(content)}</textarea>
+      <div class="editor-preview" id="editorPreview" style="display:none"></div>
+    </div>`;
+  highlightSidebar(slug);
+}
+
+let previewVisible = false;
+
+async function togglePreview() {
+  previewVisible = !previewVisible;
+  const textarea = document.getElementById('editorTextarea');
+  const preview = document.getElementById('editorPreview');
+  const toggle = document.getElementById('previewToggle');
+  if (previewVisible) {
+    // render preview
+    const result = await api('get_page', { slug: state.currentSlug });
+    // We'll do a simple client-side render by sending content to the server
+    // Actually, let's just use the server's render function
+    const page = await api('get_page', { slug: '__preview__' });
+    // Instead, let's just show the raw markdown in a rendered way
+    // Better approach: send to server for rendering
+    preview.innerHTML = '<div class="loading"><div class="spinner"></div> Rendering...</div>';
+    preview.style.display = 'block';
+    textarea.style.display = 'none';
+    toggle.textContent = 'Edit';
+    // We'll render via a quick API trick - create a temp page
+    renderPreview(textarea.value);
+  } else {
+    preview.style.display = 'none';
+    textarea.style.display = 'block';
+    toggle.textContent = 'Preview';
+  }
+}
+
+async function renderPreview(markdown) {
+  // Use the server's render by creating a temp page
+  const result = await api('get_page', { slug: state.currentSlug });
+  // We can't easily render arbitrary markdown through the API without saving.
+  // Let's use a simple approach: save temporarily, render, then restore
+  // Actually, let's just do a simple client-side render
+  const preview = document.getElementById('editorPreview');
+  preview.innerHTML = simpleRender(markdown);
+}
+
+function simpleRender(text) {
+  // Basic client-side markdown render for preview
+  let html = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  // wiki links
+  html = html.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (m, target, display) => {
+    const d = display || target;
+    return `<a href="#/page/${slugify(target)}" class="wiki-link">${d}</a>`;
+  });
+
+  // code blocks
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+
+  // headings
+  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+  html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+
+  // bold/italic
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+
+  // inline code
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+  // horizontal rules
+  html = html.replace(/^---$/gm, '<hr>');
+
+  // lists
+  let inList = false;
+  const lines = html.split('\n');
+  const out = [];
+  for (const line of lines) {
+    if (/^\s*[-*]\s+/.test(line)) {
+      if (!inList) { out.push('<ul>'); inList = true; }
+      out.push('<li>' + line.replace(/^\s*[-*]\s+/, '') + '</li>');
+    } else if (/^\s*\d+\.\s+/.test(line)) {
+      if (inList) { out.push('</ul>'); inList = false; }
+      out.push('<li>' + line.replace(/^\s*\d+\.\s+/, '') + '</li>');
+    } else {
+      if (inList) { out.push('</ul>'); inList = false; }
+      out.push(line);
+    }
+  }
+  if (inList) out.push('</ul>');
+  html = out.join('\n');
+
+  // paragraphs
+  const paras = html.split(/\n\n+/);
+  html = paras.map(p => {
+    const s = p.trim();
+    if (!s) return '';
+    if (/^<(h[123]|ul|ol|pre|hr|li)/.test(s)) return s;
+    return `<p>${s}</p>`;
+  }).join('');
+
+  return html;
+}
+
+function insertMarkdown(before, after) {
+  const ta = document.getElementById('editorTextarea');
+  if (!ta) return;
+  const start = ta.selectionStart;
+  const end = ta.selectionEnd;
+  const selected = ta.value.substring(start, end);
+  const replacement = before + selected + after;
+  ta.value = ta.value.substring(0, start) + replacement + ta.value.substring(end);
+  ta.focus();
+  ta.selectionStart = start + before.length;
+  ta.selectionEnd = start + before.length + selected.length;
+}
+
+async function savePage() {
+  const ta = document.getElementById('editorTextarea');
+  if (!ta) return;
+  const content = ta.value;
+  const slug = state.currentSlug;
+  if (!slug) return;
+
+  const result = await api('update_page', { slug, content });
+  if (result && !result.error) {
+    showToast('Page saved!', 'success');
+    navigateToPage(slug);
+    loadSidebar();
+  } else if (result && result.error) {
+    showToast(result.error, 'error');
+  }
+}
+
+// ── History ───────────────────────────────────────────────────────────
+async function loadHistory(slug) {
+  resetContentArea();
+  const area = document.getElementById('contentArea');
+  area.innerHTML = '<div class="loading"><div class="spinner"></div> Loading...</div>';
+  renderBreadcrumb(slug, false, true);
+  renderPageActions(slug);
+
+  const versions = await api('get_page_history', { slug }) || [];
+  const page = await api('get_page', { slug });
+
+  area.innerHTML = `
+    <div class="history-panel">
+      <h3><i class="bi bi-clock-history"></i> Page History: ${page ? escapeHtml(page.title) : slug}</h3>
+      ${versions.length === 0 ? '<p style="color:var(--text-muted)">No history available.</p>' : ''}
+      ${versions.map((v, i) => `
+        <div class="version-item">
+          <span>${formatDate(v.timestamp)} ${i === 0 ? '(current)' : ''}</span>
+          <button onclick="viewVersion('${slug}', '${v.timestamp.replace(/[T:]/g, '').substring(0, 15)}')">View</button>
+        </div>
+      `).join('')}
+    </div>`;
+}
+
+async function viewVersion(slug, timestamp) {
+  const ver = await api('get_page_version', { slug, timestamp });
+  if (!ver) { showToast('Version not found', 'error'); return; }
+  const area = document.getElementById('contentArea');
+  area.innerHTML = `
+    <div class="wiki-page">
+      <div style="background:#fff3cd;padding:8px 16px;border-radius:var(--radius);margin-bottom:16px;font-size:13px">
+        <i class="bi bi-clock-history"></i> Viewing version from ${timestamp}
+        <button class="btn btn-sm" style="margin-left:12px" onclick="navigateToPage('${slug}')">Back to current</button>
+      </div>
+      ${ver.html}
+    </div>`;
+}
+
+// ── Create / Delete ──────────────────────────────────────────────────
+function showCreateModal(prefillSlug) {
+  document.getElementById('createModal').style.display = 'flex';
+  const input = document.getElementById('newPageTitle');
+  if (prefillSlug) {
+    input.value = titleFromSlug(prefillSlug);
+  } else {
+    input.value = '';
+  }
+  setTimeout(() => input.focus(), 100);
+}
+
+function closeCreateModal() {
+  document.getElementById('createModal').style.display = 'none';
+}
+
+async function createPage() {
+  const title = document.getElementById('newPageTitle').value.trim();
+  if (!title) { showToast('Please enter a title', 'error'); return; }
+  const result = await api('create_page', { title, content: '' });
+  if (result && !result.error) {
+    closeCreateModal();
+    showToast(`Created "${title}"`, 'success');
+    loadSidebar();
+    navigateToPage(result.slug);
+  } else if (result && result.error) {
+    showToast(result.error, 'error');
+  } else {
+    showToast('Failed to create page', 'error');
+  }
+}
+
+function showDeleteModal(slug) {
+  state.deleteTarget = slug;
+  document.getElementById('deleteConfirmText').textContent = `Delete "${titleFromSlug(slug)}"? This cannot be undone.`;
+  document.getElementById('deleteModal').style.display = 'flex';
+}
+
+function closeDeleteModal() {
+  document.getElementById('deleteModal').style.display = 'none';
+  state.deleteTarget = null;
+}
+
+async function confirmDelete() {
+  const slug = state.deleteTarget;
+  if (!slug) return;
+  const result = await api('delete_page', { slug });
+  if (result && !result.error) {
+    closeDeleteModal();
+    showToast('Page deleted', 'success');
+    loadSidebar();
+    navigateHome();
+  } else {
+    showToast(result?.error || 'Failed to delete', 'error');
+  }
+}
+
+function closeModal(event) {
+  if (event && event.target.classList.contains('modal-overlay')) {
+    event.target.style.display = 'none';
+  }
+}
+
+// ── Breadcrumb ───────────────────────────────────────────────────────
+function renderBreadcrumb(slug, editing, history, isGraph) {
+  const el = document.getElementById('breadcrumbCurrent');
+  if (isGraph) {
+    if (slug) {
+      const title = titleFromSlug(slug);
+      el.innerHTML = ` / <a href="#/graph">Graph</a> / ${escapeHtml(title)}`;
+    } else {
+      el.innerHTML = ' / Graph';
+    }
+    return;
+  }
+  if (!slug) {
+    el.textContent = '';
+    return;
+  }
+  const title = titleFromSlug(slug);
+  if (history) {
+    el.innerHTML = ` / <a href="#/page/${slug}">${escapeHtml(title)}</a> / History`;
+  } else if (editing) {
+    el.innerHTML = ` / <a href="#/page/${slug}">${escapeHtml(title)}</a> / Edit`;
+  } else {
+    el.innerHTML = ` / ${escapeHtml(title)}`;
+  }
+}
+
+// ── Page Actions ──────────────────────────────────────────────────────
+function renderPageActions(slug, editing) {
+  const el = document.getElementById('pageActions');
+  if (!slug) {
+    el.innerHTML = '';
+    return;
+  }
+  if (editing) {
+    el.innerHTML = `
+      <button class="btn" onclick="navigateToPage('${slug}')"><i class="bi bi-x-lg"></i> Cancel</button>
+      <button class="btn btn-primary" onclick="savePage()"><i class="bi bi-check-lg"></i> Save</button>
+    `;
+  } else {
+    el.innerHTML = `
+      <button class="btn" onclick="navigateToEdit('${slug}')"><i class="bi bi-pencil"></i> Edit</button>
+      <button class="btn" onclick="navigateToHistory('${slug}')"><i class="bi bi-clock-history"></i> History</button>
+      <button class="btn" onclick="navigateGraph('${slug}')"><i class="bi bi-diagram-3"></i> Graph</button>
+      <button class="btn btn-danger" onclick="showDeleteModal('${slug}')"><i class="bi bi-trash"></i></button>
+    `;
+  }
+}
+
+function navigateToHistory(slug) {
+  location.hash = `#/history/${slug}`;
+}
+
+// ── Welcome ──────────────────────────────────────────────────────────
+function renderWelcome() {
+  const area = document.getElementById('contentArea');
+  area.classList.add('welcome');
+  area.innerHTML = `
+    <div class="welcome-card">
+      <div class="big-icon"><i class="bi bi-journal-text"></i></div>
+      <h2>Welcome to Sticky Wiki</h2>
+      <p>
+        A personal wiki of markdown pages — inspired by Andrej Karpathy's
+        LLM Wiki pattern. Browse, create, and edit interlinked wiki pages
+        stored as plain markdown files.
+      </p>
+      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="showCreateModal()">
+          <i class="bi bi-plus-lg"></i> Create your first page
+        </button>
+        <button class="btn" onclick="navigateGraph()">
+          <i class="bi bi-diagram-3"></i> Graph view
+        </button>
+      </div>
+    </div>`;
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function titleFromSlug(slug) {
+  return slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function formatDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-US', {
+    year: 'numeric', month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit'
+  });
+}
+
+function slugify(text) {
+  return text.toLowerCase().trim()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-');
+}
+
+function showToast(msg, type = '') {
+  const container = document.getElementById('toastContainer');
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.textContent = msg;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transition = 'opacity 0.3s';
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
+
+// ── Init ─────────────────────────────────────────────────────────────
+async function init() {
+  await loadSidebar();
+  handleHash();
+}
+
+window.addEventListener('load', init);
+</script>
+</body>
+</html>
