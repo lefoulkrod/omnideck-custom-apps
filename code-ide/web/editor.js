@@ -4,6 +4,21 @@ import { state } from './state.js';
 import { dom } from './dom.js';
 import { renderPreview } from './preview.js';
 
+// A few pixels of context above the revealed line, so it is not flush.
+const EDITOR_REVEAL_MARGIN = 8;
+
+/* Put a jumped-to line at the top of the viewport rather than wherever it
+ * happens to land. Following a search hit or a symbol means reading downward
+ * from it, so anything above it is wasted screen. */
+export function revealLine(line, column = 0) {
+  const cm = state.cm;
+  if (!cm || !line) return;
+  const position = { line: Math.max(0, line - 1), ch: column };
+  cm.setCursor(position);
+  const coords = cm.charCoords(position, 'local');
+  cm.scrollTo(null, Math.max(0, coords.top - EDITOR_REVEAL_MARGIN));
+}
+
 // ===== CodeMirror mode mapping =====
 export const CM_MODES = {
   '.py': 'python',
@@ -110,10 +125,10 @@ function renderDiffEditor(tab, showContextMenuFn) {
   const labels = document.createElement('div');
   labels.className = 'diff-editor-labels';
   const originalLabel = document.createElement('span');
-  originalLabel.textContent = tab.status === '??' ? 'HEAD · Empty file' : 'HEAD';
+  originalLabel.textContent = tab.labelLeft || (tab.status === '??' ? 'HEAD · Empty file' : 'HEAD');
   const spacer = document.createElement('span');
   const modifiedLabel = document.createElement('span');
-  modifiedLabel.textContent = tab.deleted ? 'Working Tree · Deleted' : 'Working Tree';
+  modifiedLabel.textContent = tab.labelRight || (tab.deleted ? 'Working Tree · Deleted' : 'Working Tree');
   labels.append(originalLabel, spacer, modifiedLabel);
 
   const host = document.createElement('div');

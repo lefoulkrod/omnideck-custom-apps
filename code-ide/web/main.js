@@ -14,6 +14,7 @@ import {
   renderTree,
   refreshTree as treeRefreshTree,
   setTreeDeps, collapseAllDirs, toggleHiddenFiles, revealPath, initTreeKeyboard,
+  updateWorkspaceName,
 } from './tree.js';
 
 // Tabs
@@ -73,12 +74,21 @@ import { initKeyboard } from './keyboard.js';
 // Search
 import { initSearch } from './search.js';
 import {
-  initQuickOpen, openQuickOpen, openCommandPalette,
+  initQuickOpen, openQuickOpen, openCommandPalette, openWorkspaceSwitcher,
 } from './quick-open.js';
 import { initSettings, openSettings } from './settings.js';
 import {
   initSourceControl, refreshSourceControl,
 } from './source-control.js';
+import {
+  initStructure, refreshStructure, buildStructure, resetStructure,
+} from './structure.js';
+import {
+  initMetrics, refreshMetrics, buildMetrics, resetMetrics,
+} from './metrics.js';
+import {
+  initReview, refreshReview, runReview, resetReview, loadReview,
+} from './review.js';
 
 // ===== Wire up cross-module dependencies =====
 
@@ -97,6 +107,39 @@ async function showSourceControlBound() {
   dom.resizer.classList.remove('hidden');
   saveStateBound();
   await refreshSourceControl();
+}
+async function toggleStructureBound() {
+  const opened = toggleSidebarView('structure', saveStateBound);
+  if (opened) await refreshStructure();
+}
+async function toggleMetricsBound() {
+  const opened = toggleSidebarView('metrics', saveStateBound);
+  if (opened) await refreshMetrics();
+}
+async function showStructureBound() {
+  setSidebarView('structure');
+  dom.sidebar.classList.remove('hidden');
+  dom.resizer.classList.remove('hidden');
+  saveStateBound();
+  await refreshStructure();
+}
+async function showMetricsBound() {
+  setSidebarView('metrics');
+  dom.sidebar.classList.remove('hidden');
+  dom.resizer.classList.remove('hidden');
+  saveStateBound();
+  await refreshMetrics();
+}
+async function toggleReviewBound() {
+  const opened = toggleSidebarView('review', saveStateBound);
+  if (opened) await refreshReview();
+}
+async function showReviewBound() {
+  setSidebarView('review');
+  dom.sidebar.classList.remove('hidden');
+  dom.resizer.classList.remove('hidden');
+  saveStateBound();
+  await refreshReview();
 }
 
 // Tabs: create bound versions
@@ -143,7 +186,15 @@ function goHomeBound() {
   goHome(navigateToBound, updatePrompt, saveStateBound);
   setTerminalWorkspace(state.homePath);
 }
+/* Switching workspace invalidates every view built from the old one. */
+function resetWorkspaceViews() {
+  resetReview();
+  resetMetrics();
+  resetStructure();
+}
+
 function openFolderAsRootBound(path) {
+  resetWorkspaceViews();
   if (path && path !== state.homePath) {
     state.recentRoots = [path, ...state.recentRoots.filter(root => root !== path)].slice(0, 10);
   }
@@ -361,6 +412,10 @@ async function init() {
   initTreeKeyboard();
   initSettings(renderEditorBound, saveStateBound);
   initSourceControl(toggleSidebarBound, openDiffBound);
+  initStructure(openFileBound);
+  initMetrics(openFileBound);
+  initReview(openFileBound, openDiffBound);
+  loadReview();
   initQuickOpen({
     openFile: openFileBound,
     openFolder: openFolderAsRootBound,
@@ -374,6 +429,13 @@ async function init() {
       { label: 'View: Toggle Terminal', detail: 'Ctrl+`', icon: 'bi-terminal', action: toggleTerminalBound },
       { label: 'View: Toggle Sidebar', detail: 'Ctrl+B', icon: 'bi-layout-sidebar', action: toggleSidebarBound },
       { label: 'View: Source Control', icon: 'bi-git', action: showSourceControlBound },
+      { label: 'View: Code Structure', icon: 'bi-diagram-3', action: showStructureBound },
+      { label: 'View: Code Metrics', icon: 'bi-bar-chart-line', action: showMetricsBound },
+      { label: 'Workspace: Switch…', icon: 'bi-folder2-open', action: openWorkspaceSwitcher },
+      { label: 'View: Review', icon: 'bi-shield-check', action: showReviewBound },
+      { label: 'Observatory: Build Metrics Index', icon: 'bi-arrow-clockwise', action: buildMetrics },
+      { label: 'Observatory: Build Symbol Index', icon: 'bi-diagram-3', action: buildStructure },
+      { label: 'Observatory: Run Review Check', icon: 'bi-shield-check', action: runReview },
       { label: 'Preferences: Editor Settings', icon: 'bi-gear', action: openSettings },
       { label: 'Omnideck: Ask About Selection or File', detail: 'Ctrl+Shift+A', icon: 'bi-chat-left-text', action: askOmnideckBound },
     ],
@@ -412,6 +474,10 @@ async function init() {
   // Activity Bar explorer toggle
   bindClick('btn-explorer', toggleExplorerBound);
   bindClick('btn-source-control', toggleSourceControlBound);
+  bindClick('btn-structure', toggleStructureBound);
+  bindClick('btn-metrics', toggleMetricsBound);
+  bindClick('btn-review', toggleReviewBound);
+  bindClick('btn-workspace', openWorkspaceSwitcher);
   bindClick('btn-settings', openSettings);
 
   // Modal/confirm bindings
@@ -434,6 +500,7 @@ async function init() {
   if (homeResult.home) {
     state.homePath = homeResult.home;
     state.rootDir = homeResult.home;
+    updateWorkspaceName();
     setTerminalWorkspace(homeResult.home);
 
     // Restore saved state — but only UI state that the user hasn't already touched
@@ -493,6 +560,7 @@ async function init() {
       // Restore workspace root
       if (saved.rootDir && saved.rootDir !== state.homePath) {
         state.rootDir = saved.rootDir;
+        updateWorkspaceName();
         state.currentDir = saved.rootDir;
         setTerminalWorkspace(saved.rootDir);
         renderBreadcrumb(saved.rootDir, goHomeBound, navigateToBound);
@@ -504,6 +572,15 @@ async function init() {
       }
       if (!saved.sidebarHidden && saved.sidebarView === 'source-control') {
         await refreshSourceControl();
+      }
+      if (!saved.sidebarHidden && saved.sidebarView === 'structure') {
+        await refreshStructure();
+      }
+      if (!saved.sidebarHidden && saved.sidebarView === 'metrics') {
+        await refreshMetrics();
+      }
+      if (!saved.sidebarHidden && saved.sidebarView === 'review') {
+        await refreshReview();
       }
       if (saved.selectedDir) state.selectedDir = saved.selectedDir;
       // Restore expanded dirs

@@ -1,6 +1,7 @@
 /* ===== Context Menu ===== */
 
 import { state } from './state.js';
+import { escapeHtml } from './dom.js';
 import { dom } from './dom.js';
 
 function renderContextMenu(x, y, items) {
@@ -17,7 +18,7 @@ function renderContextMenu(x, y, items) {
     el.className = 'context-menu-item'
       + (mi.danger ? ' danger' : '')
       + (mi.disabled ? ' disabled' : '');
-    el.innerHTML = `<span class="ctx-icon"><i class="bi ${mi.icon || ''}"></i></span><span class="ctx-label">${mi.label}</span>`;
+    el.innerHTML = `<span class="ctx-icon"><i class="bi ${mi.icon || ''}"></i></span><span class="ctx-label">${escapeHtml(mi.label)}</span>`;
     if (mi.shortcut) {
       const shortcut = document.createElement('span');
       shortcut.className = 'ctx-shortcut';

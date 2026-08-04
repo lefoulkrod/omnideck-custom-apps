@@ -27,17 +27,20 @@ export async function loadDir(path) {
 // ===== Navigation =====
 
 export async function navigateTo(path, goHomeFn) {
+  // Navigating to a directory exits search mode
+  state.isSearching = false;
   state.currentDir = path;
   state.selectedDir = path;
   state.selectedPath = path;
   renderBreadcrumb(path, goHomeFn, (p) => navigateTo(p, goHomeFn));
-  updateWorkspaceName(path);
   dom.treeContainer.innerHTML = '<div class="loading"><div class="spinner"></div>Loading...</div>';
   const result = await loadDir(path);
   if (result) renderTree();
 }
 
 export async function openFolderAsRoot(path, updatePromptFn, saveStateFn, goHomeFn) {
+  // Opening a new workspace exits search mode
+  state.isSearching = false;
   state.rootDir = path;
   state.currentDir = path;
   state.selectedDir = path;
@@ -45,7 +48,7 @@ export async function openFolderAsRoot(path, updatePromptFn, saveStateFn, goHome
   state.expandedDirs.clear();
   state.treeData = {};
   renderBreadcrumb(path, goHomeFn, (p) => navigateTo(p, goHomeFn));
-  updateWorkspaceName(path);
+  updateWorkspaceName();
   dom.treeContainer.innerHTML = '<div class="loading"><div class="spinner"></div>Loading...</div>';
   const result = await loadDir(path);
   if (result) renderTree();
@@ -54,6 +57,7 @@ export async function openFolderAsRoot(path, updatePromptFn, saveStateFn, goHome
 
 export function goHome(navigateToFn, updatePromptFn, saveStateFn) {
   state.rootDir = state.homePath;
+  updateWorkspaceName();
   state.currentDir = state.homePath;
   state.selectedDir = state.homePath;
   state.selectedPath = state.homePath;
@@ -63,10 +67,17 @@ export function goHome(navigateToFn, updatePromptFn, saveStateFn) {
   saveStateFn();
 }
 
-function updateWorkspaceName(path) {
+export function updateWorkspaceName() {
+  const path = state.rootDir || state.homePath;
+  const label = path === state.homePath
+    ? 'Home'
+    : path.substring(path.lastIndexOf('/') + 1);
   const wsName = document.getElementById('workspace-name');
-  if (wsName) {
-    wsName.textContent = path === state.homePath ? 'Explorer' : path.substring(path.lastIndexOf('/') + 1);
+  if (wsName) wsName.textContent = path === state.homePath ? 'Explorer' : label;
+  const current = document.getElementById('workspace-current');
+  if (current) {
+    current.textContent = label;
+    current.parentElement.title = `Workspace: ${path}`;
   }
 }
 
@@ -79,6 +90,8 @@ function updateWorkspaceName(path) {
 // loaded, it's skipped (shouldn't happen in normal flow).
 
 export function renderTree() {
+  // Don't render the file tree while search results are showing
+  if (state.isSearching) return;
   const scrollTop = dom.treeContainer.scrollTop;
   dom.treeContainer.innerHTML = '';
   const data = state.treeData[state.currentDir];
@@ -246,7 +259,6 @@ export async function revealPath(path) {
   if (!path.startsWith(state.currentDir + '/')) {
     state.currentDir = state.rootDir;
     if (!state.treeData[state.currentDir]) await loadDir(state.currentDir);
-    updateWorkspaceName(state.currentDir);
   }
   const parent = parentPath(path);
   const relative = parent.substring(state.currentDir.length + 1);

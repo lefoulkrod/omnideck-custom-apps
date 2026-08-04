@@ -19,6 +19,11 @@
   <div class="titlebar">
     <i class="bi bi-code-slash titlebar-icon"></i>
     <span class="titlebar-title">Code IDE</span>
+    <button class="workspace-btn" id="btn-workspace" title="Switch workspace">
+      <i class="bi bi-folder2-open"></i>
+      <span id="workspace-current">Home</span>
+      <i class="bi bi-chevron-down workspace-caret"></i>
+    </button>
     <div class="titlebar-spacer"></div>
     <button class="titlebar-btn" id="btn-new-file" title="New File"><i class="bi bi-file-earmark-plus"></i> New File</button>
     <button class="titlebar-btn" id="btn-new-folder" title="New Folder"><i class="bi bi-folder-plus"></i> New Folder</button>
@@ -35,6 +40,15 @@
       </button>
       <button class="activity-btn" id="btn-source-control" title="Source Control">
         <i class="bi bi-git"></i>
+      </button>
+      <button class="activity-btn" id="btn-structure" title="Code Structure">
+        <i class="bi bi-diagram-3"></i>
+      </button>
+      <button class="activity-btn" id="btn-metrics" title="Code Metrics">
+        <i class="bi bi-bar-chart-line"></i>
+      </button>
+      <button class="activity-btn" id="btn-review" title="Review">
+        <i class="bi bi-shield-check"></i>
       </button>
       <button class="activity-btn" id="btn-settings" title="Editor Settings">
         <i class="bi bi-gear"></i>
@@ -85,6 +99,59 @@
         </div>
         <div id="source-branch" class="source-branch"></div>
         <div id="source-files" class="source-files"></div>
+      </div>
+
+      <!-- Code Structure (Symbol Explorer) -->
+      <div class="sidebar-view observatory-view" id="structure-view" hidden>
+        <div class="observatory-header">
+          <strong>Structure</strong>
+          <div class="sidebar-actions">
+            <button class="icon-btn" id="structure-build" title="Build Index"><i class="bi bi-arrow-clockwise"></i></button>
+            <button class="icon-btn" id="structure-mode-tree" title="Symbol Tree"><i class="bi bi-list-ul"></i></button>
+            <button class="icon-btn" id="structure-mode-entry" title="Entry Points"><i class="bi bi-door-open"></i></button>
+            <button class="icon-btn" id="structure-mode-calltree" title="Call Tree"><i class="bi bi-diagram-2"></i></button>
+          </div>
+        </div>
+        <div id="structure-status" class="observatory-status">No index — click build.</div>
+        <div class="symbol-search-bar">
+          <i class="bi bi-search search-icon"></i>
+          <input type="text" id="symbol-search" placeholder="Search symbols..." spellcheck="false" autocomplete="off">
+        </div>
+        <div id="structure-tree" class="symbol-tree-wrap"></div>
+        <div id="symbol-details" class="symbol-details" hidden></div>
+      </div>
+
+      <!-- Code Metrics -->
+      <div class="sidebar-view observatory-view" id="metrics-view" hidden>
+        <div class="observatory-header">
+          <strong>Metrics</strong>
+          <div class="sidebar-actions">
+            <button class="icon-btn" id="metrics-build" title="Build / Refresh Index"><i class="bi bi-arrow-clockwise"></i></button>
+          </div>
+        </div>
+        <div id="metrics-status" class="observatory-status">No index — click build.</div>
+        <div id="metrics-body" class="observatory-body"></div>
+      </div>
+
+      <!-- Architecture Insights -->
+      <!-- Review -->
+      <div class="sidebar-view observatory-view" id="review-view" hidden>
+        <div class="observatory-header">
+          <strong>Review</strong>
+          <div class="sidebar-actions">
+            <button class="icon-btn" id="review-run" title="Run check"><i class="bi bi-play-fill"></i></button>
+          </div>
+        </div>
+        <div class="review-controls">
+          <select id="review-base" class="review-select"></select>
+          <span class="review-arrow">&rarr;</span>
+          <select id="review-target" class="review-select">
+            <option value="working">Working Tree</option>
+          </select>
+        </div>
+        <div id="review-scope" class="review-scope"></div>
+        <div id="review-status" class="observatory-status">Pick base and target, then run.</div>
+        <div id="review-body" class="observatory-body"></div>
       </div>
     </div>
 

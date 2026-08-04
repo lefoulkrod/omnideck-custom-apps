@@ -57,6 +57,38 @@ function renderCommands(query) {
   select(0);
 }
 
+/* Workspaces are searchable from anywhere, so switching projects never means
+ * hunting through the file tree first. */
+async function renderWorkspaces(query) {
+  const request = ++sequence;
+  dom.quickResults.innerHTML = '';
+  const result = await api('list_workspaces', { query, limit: 60 });
+  if (request !== sequence) return;
+  if (result.error) {
+    addResult('bi-exclamation-triangle', result.error, '', () => {});
+    select(0);
+    return;
+  }
+  const current = state.rootDir || state.homePath;
+  if (!query) {
+    addResult('bi-house-door', 'Home', result.home, () => openFolder(result.home));
+    for (const path of state.recentRoots || []) {
+      if (path === result.home) continue;
+      addResult('bi-clock-history', basename(path), path, () => openFolder(path));
+    }
+  }
+  for (const ws of result.workspaces || []) {
+    if (ws.path === current) continue;
+    addResult(
+      ws.is_repo ? 'bi-git' : 'bi-folder2',
+      ws.name,
+      relativePath(ws.path),
+      () => openFolder(ws.path),
+    );
+  }
+  select(0);
+}
+
 async function renderFiles(query) {
   const request = ++sequence;
   dom.quickResults.innerHTML = '';
@@ -89,17 +121,20 @@ function open(modeName) {
   mode = modeName;
   selectedIndex = 0;
   dom.quickInput.value = '';
-  dom.quickInput.placeholder = mode === 'commands'
-    ? 'Type a command'
-    : 'Go to File (Ctrl+P)';
+  dom.quickInput.placeholder = {
+    commands: 'Type a command',
+    workspaces: 'Search folders to open as workspace',
+  }[mode] || 'Go to File (Ctrl+P)';
   dom.quickOverlay.classList.add('visible');
   if (mode === 'commands') renderCommands('');
+  else if (mode === 'workspaces') renderWorkspaces('');
   else renderFiles('');
   setTimeout(() => dom.quickInput.focus(), 0);
 }
 
 export function openQuickOpen() { open('files'); }
 export function openCommandPalette() { open('commands'); }
+export function openWorkspaceSwitcher() { open('workspaces'); }
 
 export function initQuickOpen(options) {
   openFile = options.openFile;
@@ -108,6 +143,7 @@ export function initQuickOpen(options) {
 
   dom.quickInput.addEventListener('input', () => {
     if (mode === 'commands') renderCommands(dom.quickInput.value);
+    else if (mode === 'workspaces') renderWorkspaces(dom.quickInput.value);
     else renderFiles(dom.quickInput.value);
   });
   dom.quickInput.addEventListener('keydown', (event) => {

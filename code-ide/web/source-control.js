@@ -68,7 +68,13 @@ export async function refreshSourceControl() {
     return;
   }
   repositoryRoot = result.root;
-  $('source-branch').textContent = `${result.branch || 'Repository'} · ${result.count} change${result.count === 1 ? '' : 's'}`;
+  /* Git status covers the whole repository, which may be wider than the
+   * selected workspace. Name the repository so that is visible. */
+  const where = result.is_repo_root === false
+    ? ` · whole repo ${result.repo_name}`
+    : '';
+  $('source-branch').textContent =
+    `${result.branch || 'Repository'} · ${result.count} change${result.count === 1 ? '' : 's'}${where}`;
   const container = $('source-files');
   if (!result.files.length) {
     const clean = document.createElement('div');

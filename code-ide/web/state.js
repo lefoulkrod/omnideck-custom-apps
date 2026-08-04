@@ -20,6 +20,7 @@ export const state = {
   userInteracted: false,
   openRequestToken: 0,
   searchContent: false,
+  isSearching: false,
   settings: {
     tabSize: 2,
     insertSpaces: true,

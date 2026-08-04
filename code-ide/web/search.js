@@ -5,11 +5,12 @@ import { dom } from './dom.js';
 import { api, showToast } from './api.js';
 import { getFileIcon } from './icons.js';
 import { relativePath } from './breadcrumb.js';
-import { renderTree } from './tree.js';
+import { renderTree, revealPath } from './tree.js';
+import { revealLine } from './editor.js';
 import { openConfirmDialog } from './modals.js';
+import { showContextMenu } from './context-menu.js';
 
 let searchTimer = null;
-let isSearching = false;
 let searchSequence = 0;
 
 function searchParams(query) {
@@ -114,20 +115,20 @@ export function initSearch(openFileFn, navigateToFn, refreshTreeFn) {
 
 export function clearSearch() {
   searchSequence += 1;
-  if (!isSearching) return;
-  isSearching = false;
+  if (!state.isSearching) return;
+  state.isSearching = false;
   dom.treeContainer.innerHTML = '';
   if (state.treeData[state.currentDir]) renderTree();
 }
 
 export async function doSearch(query, openFileFn, navigateToFn) {
   const requestId = ++searchSequence;
-  isSearching = true;
+  state.isSearching = true;
   const tree = dom.treeContainer;
   tree.innerHTML = '<div class="loading"><div class="spinner"></div>Searching...</div>';
 
   const result = await api('search_files', searchParams(query));
-  if (!isSearching || requestId !== searchSequence) return;
+  if (!state.isSearching || requestId !== searchSequence) return;
 
   tree.innerHTML = '';
   if (result.error) {
@@ -146,7 +147,6 @@ export async function doSearch(query, openFileFn, navigateToFn) {
     ? `${results.length} result${results.length === 1 ? '' : 's'}`
     : 'No results';
   tree.appendChild(header);
-  if (!results.length) return;
 
   for (const item of results) {
     const row = document.createElement('div');
@@ -175,19 +175,26 @@ export async function doSearch(query, openFileFn, navigateToFn) {
 
     row.onclick = async () => {
       if (item.is_dir) {
+        state.selectedPath = item.path;
+        state.selectedDir = item.path;
         await navigateToFn(item.path);
       } else {
         await openFileFn(item.path, item.name);
-        if (item.line && state.cm) {
-          state.cm.setCursor({ line: item.line - 1, ch: 0 });
-          state.cm.scrollIntoView({ line: item.line - 1, ch: 0 }, 80);
-        }
+        if (item.line) revealLine(item.line);
+        // Reveal in tree — expands parent folders and scrolls into view (VS Code behavior)
+        revealPath(item.path);
       }
       dom.searchInput.value = '';
       dom.searchClear.style.display = 'none';
       clearSearch();
     };
+    row.oncontextmenu = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      showContextMenu(e.clientX, e.clientY, item);
+    };
 
     tree.appendChild(row);
   }
+
 }

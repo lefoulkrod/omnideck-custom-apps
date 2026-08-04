@@ -13,12 +13,14 @@ import shutil
 import signal
 import subprocess
 import tempfile
+import hashlib
 
 from custom_apps import action
 
 HOME = Path.home()
 
 MAX_TEXT_FILE_SIZE = 5 * 1024 * 1024
+
 SEARCH_IGNORED_DIRS = {
     '.git', '.hg', '.svn', '.venv', 'venv', '__pycache__',
     'node_modules', 'dist', 'build', '.next', '.cache',
@@ -85,14 +87,13 @@ def _atomic_write_text(target: Path, content: str) -> None:
         tmp_path.unlink(missing_ok=True)
 
 
-def _matches_globs(relative: Path, include: str = "", exclude: str = "") -> bool:
-    rel = relative.as_posix()
-    name = relative.name
+def _matches_globs(rel_path: str, name: str, include: str = "", exclude: str = "") -> bool:
+    """Check if a path matches include/exclude glob patterns."""
     includes = [part.strip() for part in include.split(',') if part.strip()]
     excludes = [part.strip() for part in exclude.split(',') if part.strip()]
-    if includes and not any(fnmatch.fnmatch(rel, pat) or fnmatch.fnmatch(name, pat) for pat in includes):
+    if includes and not any(fnmatch.fnmatch(rel_path, pat) or fnmatch.fnmatch(name, pat) for pat in includes):
         return False
-    if any(fnmatch.fnmatch(rel, pat) or fnmatch.fnmatch(name, pat) for pat in excludes):
+    if any(fnmatch.fnmatch(rel_path, pat) or fnmatch.fnmatch(name, pat) for pat in excludes):
         return False
     return True
 
@@ -357,7 +358,12 @@ def search_files(
     content: bool = False, include: str = "", exclude: str = "",
     show_hidden: bool = False,
 ) -> dict:
-    """Search names or UTF-8 file content beneath a directory."""
+    """Search names or UTF-8 file content beneath a directory.
+
+    Uses ripgrep for content search when available (10-100x faster than
+    Python line-by-line reading). Falls back to os.scandir + parallel
+    file reading otherwise.
+    """
     try:
         root = _safe_path(path) if path else HOME
         if not root.is_dir():
@@ -366,74 +372,277 @@ def search_files(
             return {"results": []}
 
         query_lower = query.lower()
-        results = []
         limit = max(1, min(int(limit), 1000))
-        for current, dirnames, filenames in os.walk(root, followlinks=False):
-            dirnames[:] = [
-                name for name in dirnames
-                if (show_hidden or not name.startswith('.')) and name not in SEARCH_IGNORED_DIRS
-            ]
-            current_path = Path(current)
-            entries = filenames if content else dirnames + filenames
-            for name in entries:
-                if name.startswith('.') and not show_hidden:
-                    continue
-                entry = current_path / name
-                try:
-                    _safe_path(str(entry))
-                except PermissionError:
-                    continue
-                relative = entry.relative_to(root)
-                if not _matches_globs(relative, include, exclude):
-                    continue
-                match_line = None
-                match_text = None
-                matched = query_lower in name.lower()
-                if content:
-                    if not entry.is_file():
-                        continue
-                    try:
-                        if entry.stat().st_size > MAX_TEXT_FILE_SIZE:
-                            continue
-                        with entry.open('r', encoding='utf-8') as handle:
-                            for number, line in enumerate(handle, 1):
-                                if query_lower in line.lower():
-                                    matched = True
-                                    match_line = number
-                                    match_text = line.strip()[:240]
-                                    break
-                    except (UnicodeDecodeError, PermissionError, OSError):
-                        continue
-                if not matched:
-                    continue
-                try:
-                    stat = entry.stat()
-                    result = {
-                        "name": entry.name,
-                        "path": str(entry),
-                        "is_dir": entry.is_dir(),
-                        "size": stat.st_size if entry.is_file() else 0,
-                        "modified": stat.st_mtime,
-                        "rel_path": str(relative),
-                    }
-                    if match_line is not None:
-                        result["line"] = match_line
-                        result["match"] = match_text
-                    results.append(result)
-                    if len(results) >= limit:
-                        break
-                except (PermissionError, OSError):
-                    continue
-            if len(results) >= limit:
-                break
+        root_str = str(root)
+        root_prefix = root_str + '/'
 
-        # Sort: dirs first, then files, alphabetical
+        if content:
+            results = _search_content(
+                root, root_str, root_prefix, query, query_lower,
+                limit, include, exclude, show_hidden,
+            )
+        else:
+            results = _search_names(
+                root, root_str, root_prefix, query_lower,
+                limit, include, exclude, show_hidden,
+            )
+
         results.sort(key=lambda r: (not r['is_dir'], r['rel_path'].lower()))
-        return {"results": results, "root": str(root), "count": len(results)}
+        return {"results": results, "root": root_str, "count": len(results)}
     except PermissionError as e:
         return {"error": str(e)}
     except Exception as e:
         return {"error": f"Search failed: {e}"}
+
+
+def _rel_path(entry_path: str, root_str: str, root_prefix: str) -> str:
+    """Compute relative path as a string, avoiding Path.relative_to overhead."""
+    if entry_path.startswith(root_prefix):
+        return entry_path[len(root_prefix):]
+    if entry_path == root_str:
+        return ''
+    return entry_path  # fallback (shouldn't happen with safe paths)
+
+
+
+
+
+def _search_names(
+    root, root_str, root_prefix, query_lower,
+    limit, include, exclude, show_hidden,
+):
+    """Fast name-only search using os.scandir with a manual stack."""
+    results = []
+    stack = [root_str]
+    while stack and len(results) < limit:
+        current = stack.pop()
+        try:
+            entries = os.scandir(current)
+        except PermissionError:
+            continue
+        with entries as it:
+            for entry in it:
+                name = entry.name
+                if not show_hidden and name.startswith('.'):
+                    continue
+                if name in SEARCH_IGNORED_DIRS:
+                    continue
+                # Skip symlinks — they could point outside the home directory
+                if entry.is_symlink():
+                    continue
+                if query_lower not in name.lower():
+                    continue
+                rel = _rel_path(entry.path, root_str, root_prefix)
+                if not _matches_globs(rel, name, include, exclude):
+                    continue
+                try:
+                    is_dir = entry.is_dir(follow_symlinks=False)
+                    st = entry.stat()
+                    results.append({
+                        "name": name,
+                        "path": entry.path,
+                        "is_dir": is_dir,
+                        "size": 0 if is_dir else st.st_size,
+                        "modified": st.st_mtime,
+                        "rel_path": rel,
+                    })
+                except OSError:
+                    continue
+        # Push subdirectories for further traversal
+        try:
+            entries2 = os.scandir(current)
+        except PermissionError:
+            continue
+        with entries2 as it:
+            for entry in it:
+                if entry.name.startswith('.'):
+                    continue
+                if entry.name in SEARCH_IGNORED_DIRS:
+                    continue
+                if entry.is_symlink():
+                    continue
+                try:
+                    if entry.is_dir(follow_symlinks=False):
+                        stack.append(entry.path)
+                except OSError:
+                    continue
+    return results
+
+
+def _search_content(
+    root, root_str, root_prefix, query, query_lower,
+    limit, include, exclude, show_hidden,
+):
+    """Content search — uses ripgrep when available, otherwise parallel file reads."""
+    # Try ripgrep first — 10-100x faster than Python line-by-line
+    rg = shutil.which('rg')
+    if rg:
+        return _search_content_rg(
+            root, root_str, root_prefix, query, query_lower,
+            limit, include, exclude, show_hidden,
+        )
+    # Fallback: parallel file reads
+    return _search_content_python(
+        root, root_str, root_prefix, query_lower,
+        limit, include, exclude, show_hidden,
+    )
+
+
+def _search_content_rg(
+    root, root_str, root_prefix, query, query_lower,
+    limit, include, exclude, show_hidden,
+):
+    """Content search via ripgrep."""
+    import subprocess
+    results = []
+    cmd = [
+        'rg', '--line-number', '--max-count', '1',
+        '--with-filename', '--no-heading',
+        '--color', 'never', '-i',
+        '--max-filesize', '5M',
+    ]
+    if show_hidden:
+        cmd.append('--hidden')
+    if include:
+        for pat in include.split(','):
+            pat = pat.strip()
+            if pat:
+                cmd.extend(['--glob', pat])
+    if exclude:
+        for pat in exclude.split(','):
+            pat = pat.strip()
+            if pat:
+                cmd.extend(['--glob', '!' + pat])
+    # Skip common ignored dirs
+    for d in SEARCH_IGNORED_DIRS:
+        cmd.extend(['--glob', '!' + d])
+    cmd.extend(['--', query, root_str])
+
+    try:
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        return results
+    except FileNotFoundError:
+        return results
+
+    if proc.returncode not in (0, 1):
+        return results  # 1 = no matches, other = error
+
+    for line in proc.stdout.splitlines():
+        if len(results) >= limit:
+            break
+        # Format: "path:line:content"
+        colon_idx = line.find(':')
+        if colon_idx < 0:
+            continue
+        file_path = line[:colon_idx]
+        rest = line[colon_idx + 1:]
+        colon_idx2 = rest.find(':')
+        if colon_idx2 < 0:
+            continue
+        try:
+            line_num = int(rest[:colon_idx2])
+        except ValueError:
+            continue
+        match_text = rest[colon_idx2 + 1:].strip()[:240]
+
+        if not file_path.startswith(root_prefix):
+            continue
+        rel = file_path[len(root_prefix):]
+        name = rel.split('/')[-1] if '/' in rel else rel
+
+        try:
+            st = os.stat(file_path)
+            results.append({
+                "name": name,
+                "path": file_path,
+                "is_dir": False,
+                "size": st.st_size,
+                "modified": st.st_mtime,
+                "rel_path": rel,
+                "line": line_num,
+                "match": match_text,
+            })
+        except OSError:
+            continue
+
+    return results
+
+
+def _search_content_python(
+    root, root_str, root_prefix, query_lower,
+    limit, include, exclude, show_hidden,
+):
+    """Content search via parallel file reads (fallback when ripgrep unavailable)."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    # First, collect all candidate files
+    candidates = []
+    stack = [root_str]
+    while stack and len(candidates) < limit * 10:
+        current = stack.pop()
+        try:
+            entries = os.scandir(current)
+        except PermissionError:
+            continue
+        with entries as it:
+            for entry in it:
+                name = entry.name
+                if not show_hidden and name.startswith('.'):
+                    continue
+                if name in SEARCH_IGNORED_DIRS:
+                    continue
+                if entry.is_symlink():
+                    continue
+                try:
+                    if entry.is_dir(follow_symlinks=False):
+                        stack.append(entry.path)
+                    elif entry.is_file():
+                        rel = _rel_path(entry.path, root_str, root_prefix)
+                        if _matches_globs(rel, name, include, exclude):
+                            candidates.append((entry.path, name, rel))
+                except OSError:
+                    continue
+
+    if not candidates:
+        return []
+
+    results = []
+
+    def search_file(path, name, rel):
+        try:
+            st = os.stat(path)
+            if st.st_size > MAX_TEXT_FILE_SIZE:
+                return None
+            with open(path, 'r', encoding='utf-8') as f:
+                for num, line in enumerate(f, 1):
+                    if query_lower in line.lower():
+                        return {
+                            "name": name,
+                            "path": path,
+                            "is_dir": False,
+                            "size": st.st_size,
+                            "modified": st.st_mtime,
+                            "rel_path": rel,
+                            "line": num,
+                            "match": line.strip()[:240],
+                        }
+        except (UnicodeDecodeError, PermissionError, OSError):
+            pass
+        return None
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = {pool.submit(search_file, p, n, r): (p, n, r) for p, n, r in candidates}
+        for future in as_completed(futures):
+            if len(results) >= limit:
+                break
+            result = future.result()
+            if result:
+                results.append(result)
+
+    return results[:limit]
 
 
 @action
@@ -617,6 +826,7 @@ def git_status(path: str = "") -> dict:
     try:
         cwd = _safe_path(path) if path else HOME
         root = _git_repository_root(cwd)
+        scope = review_mod.workspace_scope(cwd)
         proc = subprocess.run(
             ['git', '-C', str(root), 'status', '--porcelain=v1', '--branch', '-z'],
             capture_output=True, timeout=10,
@@ -655,6 +865,12 @@ def git_status(path: str = "") -> dict:
             "branch": branch,
             "files": files,
             "count": len(files),
+            # Git resolves upward to the repository root, so this listing can
+            # cover more than the selected workspace. Report the relationship
+            # rather than leaving the difference invisible.
+            "repo_name": scope["repo_name"],
+            "scope": scope["scope"],
+            "is_repo_root": scope["is_repo_root"],
         }
     except Exception as e:
         return {"error": f"Git status failed: {e}"}
@@ -755,6 +971,592 @@ def git_diff(
         }
     except Exception as e:
         return {"error": f"Git diff failed: {e}"}
+
+
+# ===== Code Observatory — metrics index =====
+import metrics as metrics_mod
+import symbols as symbols_mod
+import review as review_mod
+
+METRICS_DIR = Path(__file__).parent / "data"
+
+
+def _metrics_cache_path(root: Path) -> Path:
+    digest = hashlib.sha1(str(root).encode()).hexdigest()[:8]
+    return METRICS_DIR / f"metrics-{digest}.json"
+
+
+def _symbols_cache_path(root: Path) -> Path:
+    digest = hashlib.sha1(str(root).encode()).hexdigest()[:8]
+    return METRICS_DIR / f"symbols-{digest}.json"
+
+
+def _newest_source_mtime(root: Path, limit: int = 20000) -> float:
+    """Newest modification time under root, ignoring build and vcs folders.
+
+    Scanning mtimes needs no parsing, so it is far cheaper than rebuilding the
+    index and lets a cache answer "am I still current?" for itself.
+    """
+    newest = 0.0
+    seen = 0
+    stack = [root]
+    while stack and seen < limit:
+        try:
+            entries = list(os.scandir(stack.pop()))
+        except OSError:
+            continue
+        for entry in entries:
+            if entry.name.startswith('.') or entry.name in SEARCH_IGNORED_DIRS:
+                continue
+            seen += 1
+            try:
+                if entry.is_dir(follow_symlinks=False):
+                    stack.append(Path(entry.path))
+                else:
+                    newest = max(newest, entry.stat().st_mtime)
+            except OSError:
+                continue
+    return newest
+
+
+def _load_symbol_index(root: Path, refresh: bool = False) -> dict:
+    """Return the symbol index, rebuilding it when the sources have moved on.
+
+    The cache used to be rebuilt only when someone pressed a button, so every
+    reader silently worked from whatever the tree looked like the last time
+    that happened.
+    """
+    cache = _symbols_cache_path(root)
+    if not refresh and cache.exists():
+        try:
+            if cache.stat().st_mtime >= _newest_source_mtime(root):
+                return json.loads(cache.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            pass
+    try:
+        index = symbols_mod.build_symbol_index(root)
+    except Exception:
+        # If the index build fails (e.g. tree-sitter parse error on a large
+        # directory), return an empty index so callers can degrade gracefully.
+        return {"symbols": [], "modules": [], "file_count": 0, "symbol_count": 0}
+    METRICS_DIR.mkdir(parents=True, exist_ok=True)
+    _atomic_write_text(cache, json.dumps(index))
+    return index
+
+
+@action
+def metrics_index(path: str = "", refresh: bool = False) -> dict:
+    """Build (or return cached) code metrics index for a repo root."""
+    try:
+        root = _safe_path(path) if path else HOME
+        if not root.is_dir():
+            return {"error": f"Not a directory: {path}"}
+        cache = _metrics_cache_path(root)
+        if cache.exists() and not refresh:
+            try:
+                data = json.loads(cache.read_text(encoding="utf-8"))
+                data["cached"] = True
+                return data
+            except Exception:
+                pass  # fall through and rebuild
+        index = metrics_mod.build_index(root)
+        METRICS_DIR.mkdir(parents=True, exist_ok=True)
+        _atomic_write_text(cache, json.dumps(index))
+        index["cached"] = False
+        return index
+    except PermissionError as e:
+        return {"error": str(e)}
+    except Exception as e:
+        return {"error": f"Failed to build metrics index: {e}"}
+
+
+@action
+def metrics_status(path: str = "") -> dict:
+    """Report whether a cached metrics index exists for a repo root."""
+    try:
+        root = _safe_path(path) if path else HOME
+        cache = _metrics_cache_path(root)
+        if not cache.exists():
+            return {"exists": False}
+        stat = cache.stat()
+        try:
+            data = json.loads(cache.read_text(encoding="utf-8"))
+        except Exception:
+            data = {}
+        return {
+            "exists": True,
+            "modified": stat.st_mtime,
+            "file_count": data.get("totals", {}).get("files", 0),
+            "root": str(root),
+        }
+    except PermissionError as e:
+        return {"error": str(e)}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@action
+def symbol_index(path: str = "", refresh: bool = False) -> dict:
+    """Return a slim symbol index (modules + edges + summary) for a repo root.
+
+    The full index (with all symbols and call graphs) is cached on disk but is
+    too large to return in one action (>1MB cap). Use module_symbols /
+    symbol_details / symbol_search to fetch slices on demand.
+    """
+    try:
+        root = _safe_path(path) if path else HOME
+        if not root.is_dir():
+            return {"error": f"Not a directory: {path}"}
+        cache = _symbols_cache_path(root)
+        if cache.exists() and not refresh:
+            try:
+                index = json.loads(cache.read_text(encoding="utf-8"))
+            except Exception:
+                index = symbols_mod.build_symbol_index(root)
+                _atomic_write_text(cache, json.dumps(index))
+        else:
+            index = symbols_mod.build_symbol_index(root)
+            METRICS_DIR.mkdir(parents=True, exist_ok=True)
+            _atomic_write_text(cache, json.dumps(index))
+        # slim projection — omit the heavy per-symbol arrays
+        return {
+            "root": index.get("root", ""),
+            "file_count": index.get("file_count", 0),
+            "symbol_count": index.get("symbol_count", 0),
+            "call_count": index.get("call_count", 0),
+            "unresolved_calls": index.get("unresolved_calls", 0),
+            "languages": index.get("languages", []),
+            "modules": [
+                {
+                    "id": m["id"], "path": m["path"], "language": m["language"],
+                    "sym_count": len(m["symbols"]),
+                }
+                for m in index.get("modules", [])
+            ],
+            "edges": index.get("edges", []),
+            "summary": index.get("summary", {}),
+            "cached": not refresh,
+        }
+    except PermissionError as e:
+        return {"error": str(e)}
+    except Exception as e:
+        return {"error": f"Failed to build symbol index: {e}"}
+
+
+def _load_full_symbol_index(root: Path) -> dict | None:
+    """Read the full cached symbol index (with symbols + call graphs)."""
+    cache = _symbols_cache_path(root)
+    if not cache.exists():
+        return None
+    try:
+        return json.loads(cache.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+@action
+def module_symbols(path: str = "", module: str = "") -> dict:
+    """Return the symbols for one module (file). Slim: no callees/callers arrays."""
+    try:
+        root = _safe_path(path) if path else HOME
+        index = _load_full_symbol_index(root)
+        if index is None:
+            return {"error": "No symbol index. Build it first."}
+        for m in index.get("modules", []):
+            if m["path"] != module:
+                continue
+            sym_by_id = {s["id"]: s for s in index["symbols"]}
+            syms = []
+            for sid in m["symbols"]:
+                s = sym_by_id.get(sid)
+                if not s:
+                    continue
+                syms.append({
+                    "id": s["id"], "name": s["name"], "kind": s["kind"],
+                    "line": s["line"], "end_line": s.get("end_line", s["line"]),
+                    "enclosing": s.get("enclosing"), "size": s.get("size", 1),
+                    "signature": s.get("signature", ""),
+                    "callees_count": len(s.get("callees", [])),
+                    "callers_count": len(s.get("callers", [])),
+                })
+            return {"module": module, "symbols": syms}
+        return {"error": f"Module not found: {module}"}
+    except PermissionError as e:
+        return {"error": str(e)}
+    except Exception as e:
+        return {"error": f"Failed to load module symbols: {e}"}
+
+
+@action
+def symbol_details(path: str = "", symbol_id: str = "") -> dict:
+    """Return one symbol with its callees/callers resolved to navigable refs."""
+    try:
+        root = _safe_path(path) if path else HOME
+        index = _load_full_symbol_index(root)
+        if index is None:
+            return {"error": "No symbol index. Build it first."}
+        sym_by_id = {s["id"]: s for s in index["symbols"]}
+        s = sym_by_id.get(symbol_id)
+        if s is None:
+            return {"error": f"Symbol not found: {symbol_id}"}
+        def resolve(ids):
+            out = []
+            for sid in ids:
+                t = sym_by_id.get(sid)
+                if t:
+                    out.append({"id": t["id"], "name": t["name"], "kind": t["kind"],
+                                "module": t["module"], "line": t["line"]})
+            return out
+        return {
+            "id": s["id"], "name": s["name"], "kind": s["kind"],
+            "module": s["module"], "line": s["line"], "end_line": s.get("end_line", s["line"]),
+            "signature": s.get("signature", ""), "size": s.get("size", 1),
+            "enclosing": s.get("enclosing"),
+            "callees": resolve(s.get("callees", [])),
+            "callers": resolve(s.get("callers", [])),
+        }
+    except PermissionError as e:
+        return {"error": str(e)}
+    except Exception as e:
+        return {"error": f"Failed to load symbol details: {e}"}
+
+
+@action
+def symbol_search(path: str = "", query: str = "", limit: int = 200) -> dict:
+    """Search symbol names across the repo. Returns slim matches."""
+    try:
+        root = _safe_path(path) if path else HOME
+        if not query.strip():
+            return {"results": [], "count": 0}
+        index = _load_full_symbol_index(root)
+        if index is None:
+            return {"error": "No symbol index. Build it first."}
+        q = query.lower()
+        limit = max(1, min(int(limit), 500))
+        results = []
+        for s in index["symbols"]:
+            if q in s["name"].lower():
+                results.append({"id": s["id"], "name": s["name"], "kind": s["kind"],
+                                "module": s["module"], "line": s["line"]})
+                if len(results) >= limit:
+                    break
+        return {"results": results, "count": len(results)}
+    except PermissionError as e:
+        return {"error": str(e)}
+    except Exception as e:
+        return {"error": f"Search failed: {e}"}
+
+
+@action
+def entry_points(path: str = "") -> dict:
+    """Return symbols with zero callers — the external interface of the codebase.
+
+    Grouped into 'entry_points' (non-test, non-private) and 'tests' (test files).
+    Private/unused functions are included in entry_points for visibility.
+    """
+    try:
+        root = _safe_path(path) if path else HOME
+        index = _load_full_symbol_index(root)
+        if index is None:
+            return {"error": "No symbol index. Build it first."}
+        # Build caller count per symbol
+        caller_count: dict[str, int] = {}
+        for s in index["symbols"]:
+            for caller_id in s.get("callers", []):
+                caller_count[caller_id] = caller_count.get(caller_id, 0) + 1
+        # Also count module-level calls (calls with no enclosing function)
+        # Those are in the callees dict under __module__<path> keys — but those
+        # are caller-side keys, not callee-side. The callers list on each symbol
+        # already includes all resolved callers. So zero callers = zero callers.
+
+        entry_points = []
+        tests = []
+        for s in index["symbols"]:
+            if len(s.get("callers", [])) > 0:
+                continue
+            # Skip __init__, __main__ etc. — they're language plumbing
+            if s["name"] in ("__init__", "__main__", "__enter__", "__exit__"):
+                continue
+            info = {
+                "id": s["id"], "name": s["name"], "kind": s["kind"],
+                "module": s["module"], "line": s["line"],
+                "size": s.get("size", 0),
+                "callees_count": len(s.get("callees", [])),
+            }
+            # Classify: test file?
+            is_test = (
+                "/test" in s["module"].lower()
+                or s["module"].startswith("test")
+                or s["name"].startswith("test_")
+                or s["name"].endswith("_test")
+                or ".test." in s["module"]
+            )
+            if is_test:
+                tests.append(info)
+            else:
+                entry_points.append(info)
+
+        # Sort: larger functions first (more interesting entry points)
+        entry_points.sort(key=lambda s: (-s["size"], s["name"]))
+        tests.sort(key=lambda s: (-s["size"], s["name"]))
+
+        return {
+            "entry_points": entry_points,
+            "tests": tests,
+            "total": len(entry_points) + len(tests),
+        }
+    except PermissionError as e:
+        return {"error": str(e)}
+    except Exception as e:
+        return {"error": f"Failed to find entry points: {e}"}
+
+
+@action
+def call_tree(path: str = "", symbol_id: str = "", max_depth: int = 4) -> dict:
+    """Return a recursive callee tree from a given symbol.
+
+    Each node has {id, name, kind, module, line}. Children are callees.
+    Visited set prevents infinite loops on cycles. Max depth prevents runaway.
+    """
+    try:
+        root = _safe_path(path) if path else HOME
+        index = _load_full_symbol_index(root)
+        if index is None:
+            return {"error": "No symbol index. Build it first."}
+        sym_by_id = {s["id"]: s for s in index["symbols"]}
+        visited = set()
+        max_depth = max(1, min(int(max_depth), 8))
+
+        def build_node(sid, depth):
+            if sid in visited or depth > max_depth:
+                return None
+            visited.add(sid)
+            s = sym_by_id.get(sid)
+            if not s:
+                return None
+            children = []
+            for callee_id in s.get("callees", []):
+                child = build_node(callee_id, depth + 1)
+                if child:
+                    children.append(child)
+                elif callee_id not in visited:
+                    # Unvisited but hit depth limit — show as stub
+                    t = sym_by_id.get(callee_id)
+                    if t:
+                        children.append({
+                            "id": t["id"], "name": t["name"], "kind": t["kind"],
+                            "module": t["module"], "line": t["line"],
+                            "children": [], "truncated": True,
+                        })
+            return {
+                "id": s["id"], "name": s["name"], "kind": s["kind"],
+                "module": s["module"], "line": s["line"],
+                "size": s.get("size", 0),
+                "children": children,
+            }
+
+        tree = build_node(symbol_id, 0)
+        if tree is None:
+            return {"error": f"Symbol not found: {symbol_id}"}
+        return {"tree": tree, "visited": len(visited)}
+    except PermissionError as e:
+        return {"error": str(e)}
+    except Exception as e:
+        return {"error": f"Failed to build call tree: {e}"}
+
+
+@action
+def symbol_status(path: str = "") -> dict:
+    """Report whether a cached symbol index exists for a repo root."""
+    try:
+        root = _safe_path(path) if path else HOME
+        cache = _symbols_cache_path(root)
+        if not cache.exists():
+            return {"exists": False}
+        stat = cache.stat()
+        try:
+            data = json.loads(cache.read_text(encoding="utf-8"))
+        except Exception:
+            data = {}
+        return {
+            "exists": True,
+            "modified": stat.st_mtime,
+            "file_count": data.get("file_count", 0),
+            "symbol_count": data.get("symbol_count", 0),
+            "root": str(root),
+        }
+    except PermissionError as e:
+        return {"error": str(e)}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+OLLAMA_URL = os.environ.get("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
+OLLAMA_BATCH = 64
+
+
+def _ollama_embedding_fn():
+    """Embed via a local Ollama instance, if one is running with a text
+    embedding model. Preferred because it needs no extra Python packages."""
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(f"{OLLAMA_URL}/api/tags", timeout=3) as response:
+            tags = json.loads(response.read())
+    except Exception:
+        return None, ""
+    names = [m.get("name", "") for m in tags.get("models", [])]
+    model = next((n for n in names if "embed" in n.lower()), "")
+    if not model:
+        return None, ""
+
+    def embed(texts: list[str]) -> list[list[float]]:
+        vectors: list[list[float]] = []
+        for start in range(0, len(texts), OLLAMA_BATCH):
+            payload = json.dumps(
+                {"model": model, "input": texts[start:start + OLLAMA_BATCH]}
+            ).encode()
+            request = urllib.request.Request(
+                f"{OLLAMA_URL}/api/embed", data=payload,
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(request, timeout=300) as response:
+                vectors += json.loads(response.read())["embeddings"]
+        return vectors
+
+    return embed, f"ollama:{model}"
+
+
+def _embedding_fn() -> tuple:
+    """Return (embed callable, description), or (None, "") if nothing is
+    available.
+
+    Ollama first because it needs no install, then fastembed, which runs on
+    CPU via onnxruntime. Absence is reported to the caller rather than being
+    swallowed: a feature that is switched off should not look like one that is
+    broken.
+    """
+    embed, label = _ollama_embedding_fn()
+    if embed is not None:
+        return embed, label
+    try:
+        from fastembed import TextEmbedding
+        model = TextEmbedding("BAAI/bge-small-en-v1.5")
+    except Exception:
+        return None, ""
+    return (lambda texts: [list(v) for v in model.embed(texts)]), "fastembed:bge-small"
+
+
+@action
+def review(
+    path: str = "",
+    base: str = "HEAD",
+    target: str = "working",
+) -> dict:
+    """Report what a change reused and which named tests exercise it."""
+    try:
+        root = _safe_path(path) if path else HOME
+        if not root.is_dir():
+            return {"error": f"Not a directory: {path}"}
+        return review_mod.analyze_repo(
+            root, base=base, target=target, embed_fn=_embedding_fn()[0],
+        )
+    except PermissionError as e:
+        return {"error": str(e)}
+    except Exception as e:
+        return {"error": f"Review check failed: {e}"}
+
+
+
+WORKSPACE_SCAN_DEPTH = 3
+WORKSPACE_SCAN_CAP = 4000
+
+
+def _score_workspace(name: str, query: str) -> int:
+    """Rank a candidate folder against a query. Higher is better, 0 excludes."""
+    if not query:
+        return 1
+    name_lower = name.lower()
+    if name_lower == query:
+        return 100
+    if name_lower.startswith(query):
+        return 80
+    if query in name_lower:
+        return 60
+    # subsequence match, so "cide" finds "code-ide"
+    position = 0
+    for char in query:
+        position = name_lower.find(char, position) + 1
+        if position == 0:
+            return 0
+    return 30
+
+
+@action
+def list_workspaces(query: str = "", limit: int = 60) -> dict:
+    """Folders under home that can be opened as a workspace.
+
+    Repositories sort first because most of the app's git-aware views need
+    one, but a plain directory is still a valid workspace. Directories inside
+    a repository are included too: in a monorepo each project is its own
+    workspace.
+    """
+    try:
+        query = query.strip().lower()
+        results = []
+        scanned = 0
+        stack = [(HOME, 0)]
+        while stack and scanned < WORKSPACE_SCAN_CAP:
+            current, depth = stack.pop()
+            try:
+                entries = list(os.scandir(current))
+            except OSError:
+                continue
+            for entry in entries:
+                if not entry.is_dir(follow_symlinks=False):
+                    continue
+                if entry.name.startswith('.') or entry.name in SEARCH_IGNORED_DIRS:
+                    continue
+                scanned += 1
+                folder = Path(entry.path)
+                score = _score_workspace(entry.name, query)
+                if score:
+                    results.append({
+                        "path": str(folder),
+                        "name": entry.name,
+                        "parent": str(folder.parent),
+                        "is_repo": (folder / ".git").exists(),
+                        "score": score,
+                    })
+                if depth + 1 < WORKSPACE_SCAN_DEPTH:
+                    stack.append((folder, depth + 1))
+
+        results.sort(key=lambda r: (-r["score"], not r["is_repo"], r["name"].lower()))
+        return {
+            "workspaces": results[:limit],
+            "count": len(results),
+            "truncated": len(results) > limit,
+            "home": str(HOME),
+        }
+    except PermissionError as e:
+        return {"error": str(e)}
+    except Exception as e:
+        return {"error": f"Could not list workspaces: {e}"}
+
+
+@action
+def review_status(path: str = "") -> dict:
+    """Workspace/repository relationship plus refs for the base/target pickers."""
+    try:
+        root = _safe_path(path) if path else HOME
+        scope = review_mod.workspace_scope(root)
+        if not scope["is_repo"]:
+            return scope
+        return {**scope, **review_mod.git_refs(root)}
+    except PermissionError as e:
+        return {"error": str(e)}
+    except Exception as e:
+        return {"error": str(e)}
 
 
 @action

@@ -222,6 +222,8 @@ export function openDiff(diff, renderTabsFn, activateTabFn, saveStateFn) {
     relativePath: diff.path,
     status: diff.status,
     deleted: diff.deleted,
+    labelLeft: diff.labelLeft,
+    labelRight: diff.labelRight,
   });
   renderTabsFn();
   activateTabFn(id);

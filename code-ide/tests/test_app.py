@@ -29,16 +29,24 @@ app = importlib.import_module("app")
 
 def test_only_public_backend_actions_are_decorated() -> None:
     expected = {
+        "call_tree",
+        "review",
+        "review_status",
         "create_file",
         "create_folder",
         "delete_path",
+        "entry_points",
         "format_content",
         "get_home",
         "git_diff",
         "git_status",
         "list_dir",
+        "list_workspaces",
         "list_dir_with_hidden",
         "load_state",
+        "metrics_index",
+        "metrics_status",
+        "module_symbols",
         "read_file",
         "rename_path",
         "replace_in_files",
@@ -47,6 +55,10 @@ def test_only_public_backend_actions_are_decorated() -> None:
         "search_files",
         "stat_file",
         "stat_files",
+        "symbol_details",
+        "symbol_index",
+        "symbol_search",
+        "symbol_status",
         "write_file",
     }
     discovered = {
@@ -81,14 +93,9 @@ def test_safe_path_rejects_outside_home_and_symlink(isolated_home: Path, tmp_pat
 
 
 def test_atomic_write_detects_disk_conflict(isolated_home: Path) -> None:
-    import time
-
     target = isolated_home / "example.txt"
     target.write_text("one", encoding="utf-8")
     original_mtime = target.stat().st_mtime
-    # Ensure the mtime tick advances so the conflict is detectable even on
-    # filesystems with coarse timestamp resolution (e.g. ext4 at 1 s).
-    time.sleep(0.01)
     target.write_text("external", encoding="utf-8")
 
     result = app.write_file(str(target), "editor", expected_modified=original_mtime)
@@ -286,3 +293,67 @@ def test_json_formatter() -> None:
     result = app.format_content('{"a":1}', "JSON")
 
     assert result["content"] == '{\n  "a": 1\n}\n'
+
+
+def test_review_reports_reuse_and_test_linkage(isolated_home: Path) -> None:
+    repository = isolated_home / "review-project"
+    repository.mkdir()
+    subprocess.run(['git', 'init', '-q', str(repository)], check=True)
+    subprocess.run(
+        ['git', '-C', str(repository), 'config', 'user.email', 'tests@example.com'],
+        check=True,
+    )
+    subprocess.run(
+        ['git', '-C', str(repository), 'config', 'user.name', 'Tests'], check=True,
+    )
+
+    body = (
+        "    total_amount = 0.0\n"
+        "    for row in rows:\n"
+        "        if row.get('skip') is True:\n"
+        "            continue\n"
+        "        total_amount = total_amount + row['amount'] * row['rate']\n"
+        "        total_amount = round(total_amount, 4)\n"
+        "        row['running_total'] = total_amount\n"
+        "    return round(total_amount, 2)\n"
+    )
+    (repository / "billing.py").write_text(
+        f"def compute(rows):\n{body}", encoding="utf-8",
+    )
+    subprocess.run(['git', '-C', str(repository), 'add', '-A'], check=True)
+    subprocess.run(
+        ['git', '-C', str(repository), 'commit', '-qm', 'initial'], check=True,
+    )
+
+    # A change that reinvents the committed routine and ships one tested and
+    # one untested function.
+    (repository / "invoices.py").write_text(
+        f"def recompute(rows):\n{body}\n\ndef summarize(rows):\n    return len(rows)\n",
+        encoding="utf-8",
+    )
+    tests_dir = repository / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_invoices.py").write_text(
+        "from invoices import summarize\n"
+        "def test_summarize_counts_rows():\n"
+        "    assert summarize([]) == 0\n",
+        encoding="utf-8",
+    )
+
+    report = app.review(str(repository), base="HEAD", target="working")
+
+    assert "error" not in report
+    assert report["target"] == "Working Tree"
+
+    duplicated = {hit["name"]: hit for hit in report["reuse"]["duplicated"]}
+    assert "recompute" in duplicated
+    assert duplicated["recompute"]["match_module"] == "billing.py"
+
+    covered = {
+        item["name"]: [t["name"] for t in item["tests"]]
+        for item in report["tests"]["covered"]
+    }
+    assert covered["summarize"] == ["test_summarize_counts_rows"]
+
+    uncovered = {item["name"] for item in report["tests"]["uncovered"]}
+    assert "recompute" in uncovered

@@ -8,22 +8,33 @@ function activeView() {
   return dom.sidebar.dataset.view || 'explorer';
 }
 
+const VIEWS = ['explorer', 'source-control', 'structure', 'metrics', 'review'];
+
+const VIEW_PANELS = {
+  'explorer': () => dom.explorerView,
+  'source-control': () => dom.sourceView,
+  'structure': () => dom.structureView,
+  'metrics': () => dom.metricsView,
+  'review': () => dom.reviewView,
+};
+
 function updateActivityButtons() {
   const visible = !dom.sidebar.classList.contains('hidden');
   const view = activeView();
-  document.getElementById('btn-explorer')?.classList.toggle(
-    'active', visible && view === 'explorer',
-  );
-  document.getElementById('btn-source-control')?.classList.toggle(
-    'active', visible && view === 'source-control',
-  );
+  document.getElementById('btn-explorer')?.classList.toggle('active', visible && view === 'explorer');
+  document.getElementById('btn-source-control')?.classList.toggle('active', visible && view === 'source-control');
+  document.getElementById('btn-structure')?.classList.toggle('active', visible && view === 'structure');
+  document.getElementById('btn-metrics')?.classList.toggle('active', visible && view === 'metrics');
+  document.getElementById('btn-review')?.classList.toggle('active', visible && view === 'review');
 }
 
 export function setSidebarView(view) {
-  const normalized = view === 'source-control' ? 'source-control' : 'explorer';
+  const normalized = VIEWS.includes(view) ? view : 'explorer';
   dom.sidebar.dataset.view = normalized;
-  dom.explorerView.hidden = normalized !== 'explorer';
-  dom.sourceView.hidden = normalized !== 'source-control';
+  for (const v of VIEWS) {
+    const panel = VIEW_PANELS[v]();
+    if (panel) panel.hidden = v !== normalized;
+  }
   updateActivityButtons();
 }
 

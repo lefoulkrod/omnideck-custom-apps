@@ -2,6 +2,23 @@
 
 export const $ = (id) => document.getElementById(id);
 
+/* Escape a string for interpolation into innerHTML.
+ *
+ * Symbol names, file paths and language names all come from whatever
+ * repository is open, which the user did not necessarily write. A file named
+ * `<img src=x onerror=...>` would otherwise execute inside the app, where it
+ * can reach every backend action including terminal and write_file. Prefer
+ * textContent where practical; use this where a template literal is clearer. */
+export function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[ch]));
+}
+
 export const dom = {};
 
 export function initDom() {
@@ -39,6 +56,10 @@ export function initDom() {
   dom.sidebar = $('sidebar');
   dom.explorerView = $('explorer-view');
   dom.sourceView = $('source-view');
+  dom.structureView = $('structure-view');
+  dom.metricsView = $('metrics-view');
+  dom.reviewView = $('review-view');
+  dom.workspaceCurrent = $('workspace-current');
   dom.resizer = $('resizer');
   dom.terminalPanel = $('terminal-panel');
   dom.terminalBody = $('terminal-body');

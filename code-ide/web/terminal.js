@@ -1,6 +1,6 @@
 /* ===== Terminal ===== */
 
-import { dom } from './dom.js';
+import { dom, escapeHtml } from './dom.js';
 import { api, showToast } from './api.js';
 import { relativePath } from './breadcrumb.js';
 
@@ -94,15 +94,6 @@ export function closeActiveTerminal() {
   dom.terminalOutput.innerHTML = terminal.output;
   renderTerminalTabs();
   updatePrompt();
-}
-
-function escapeHtml(text) {
-  return String(text)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 }
 
 export function updatePrompt() {
